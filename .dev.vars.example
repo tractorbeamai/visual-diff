@@ -1,0 +1,20 @@
+# Copy this file to .dev.vars and fill in real values for local development.
+# For production, set these via `wrangler secret put <KEY>`.
+
+# GitHub App (create at https://github.com/settings/apps)
+# Permissions: Contents (read), Pull requests (read+write), Issues (write), Metadata (read)
+# Events: pull_request, issue_comment
+GITHUB_APP_ID=
+GITHUB_APP_PRIVATE_KEY=
+GITHUB_WEBHOOK_SECRET=
+
+# Anthropic / AI Gateway
+# Direct: https://api.anthropic.com
+# AI Gateway: https://gateway.ai.cloudflare.com/v1/{account_id}/{gateway_id}/anthropic
+ANTHROPIC_API_KEY=
+ANTHROPIC_BASE_URL=
+
+# Internal secrets (generate random values, e.g. `openssl rand -hex 32`)
+CDP_SECRET=
+SCREENSHOT_SECRET=
+TRIGGER_SECRET=

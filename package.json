@@ -1,0 +1,45 @@
+{
+  "name": "visual-diff",
+  "version": "0.1.0",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "build:agent": "rolldown -c sandbox-agent/build.config.ts",
+    "dev": "pnpm run build:agent && wrangler dev",
+    "deploy": "pnpm run build:agent && wrangler deploy",
+    "typecheck": "tsc --noEmit && tsc --noEmit -p sandbox-agent/tsconfig.json",
+    "typecheck:agent": "tsc --noEmit -p sandbox-agent/tsconfig.json",
+    "types": "wrangler types",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "lint": "oxlint",
+    "lint:fix": "oxlint --fix",
+    "format": "oxfmt .",
+    "format:check": "oxfmt --check ."
+  },
+  "dependencies": {
+    "@cloudflare/puppeteer": "^1.0.6",
+    "@cloudflare/sandbox": "^0.7.1",
+    "@octokit/auth-app": "^7.2.0",
+    "@octokit/rest": "^21.1.1"
+  },
+  "devDependencies": {
+    "@anthropic-ai/claude-agent-sdk": "^0.2.39",
+    "@cloudflare/vitest-pool-workers": "^0.8.0",
+    "@types/node": "^25.2.3",
+    "oxfmt": "^0.1.0",
+    "oxlint": "^1.0.0",
+    "rolldown": "1.0.0-rc.3",
+    "typescript": "^5.9.0",
+    "vitest": "~3.2.0",
+    "wrangler": "^4.59.0",
+    "zod": "^4.3.6"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "esbuild",
+      "sharp",
+      "workerd"
+    ]
+  }
+}

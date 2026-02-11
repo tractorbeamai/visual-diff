@@ -1,0 +1,44 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "visual-diff",
+  "main": "src/index.ts",
+  "compatibility_date": "2025-05-06",
+  "compatibility_flags": ["nodejs_compat"],
+  "observability": { "enabled": true },
+  "containers": [
+    {
+      "class_name": "Sandbox",
+      "image": "./Dockerfile",
+      "instance_type": "standard-2"
+    }
+  ],
+  "durable_objects": {
+    "bindings": [
+      { "class_name": "Sandbox", "name": "Sandbox" }
+    ]
+  },
+  "migrations": [
+    { "new_sqlite_classes": ["Sandbox"], "tag": "v1" }
+  ],
+  "browser": {
+    "binding": "BROWSER"
+  },
+  "r2_buckets": [
+    {
+      "binding": "SCREENSHOTS",
+      "bucket_name": "visual-diff-screenshots"
+    }
+  ],
+  "queues": {
+    "producers": [
+      { "binding": "SCREENSHOT_QUEUE", "queue": "visual-diff-jobs" }
+    ],
+    "consumers": [
+      { "queue": "visual-diff-jobs", "max_retries": 2 }
+    ]
+  },
+  "routes": [
+    { "pattern": "vd.tractorbeam.ai/*", "zone_name": "tractorbeam.ai" },
+    { "pattern": "*.vd.tractorbeam.ai/*", "zone_name": "tractorbeam.ai" }
+  ]
+}
