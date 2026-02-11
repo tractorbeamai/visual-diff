@@ -217,8 +217,6 @@ export async function startScreenshotJob(
     );
   }
 
-  await log("Agent is working...");
-
   // Helper: read agent.log from sandbox and persist to R2
   const flushLogs = async () => {
     try {

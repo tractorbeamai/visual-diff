@@ -8,70 +8,70 @@
 // You should NOT make any changes in this file as it will be overwritten.
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
-import { Route as rootRouteImport } from "./browser/routes/__root";
-import { Route as IndexRouteImport } from "./browser/routes/index";
-import { Route as OwnerRepoPullPrNumberRouteImport } from "./browser/routes/$owner/$repo/pull/$prNumber";
+import { Route as rootRouteImport } from './browser/routes/__root'
+import { Route as IndexRouteImport } from './browser/routes/index'
+import { Route as OwnerRepoPullPrNumberRouteImport } from './browser/routes/$owner/$repo/pull/$prNumber'
 
 const IndexRoute = IndexRouteImport.update({
-  id: "/",
-  path: "/",
+  id: '/',
+  path: '/',
   getParentRoute: () => rootRouteImport,
-} as any);
+} as any)
 const OwnerRepoPullPrNumberRoute = OwnerRepoPullPrNumberRouteImport.update({
-  id: "/$owner/$repo/pull/$prNumber",
-  path: "/$owner/$repo/pull/$prNumber",
+  id: '/$owner/$repo/pull/$prNumber',
+  path: '/$owner/$repo/pull/$prNumber',
   getParentRoute: () => rootRouteImport,
-} as any);
+} as any)
 
 export interface FileRoutesByFullPath {
-  "/": typeof IndexRoute;
-  "/$owner/$repo/pull/$prNumber": typeof OwnerRepoPullPrNumberRoute;
+  '/': typeof IndexRoute
+  '/$owner/$repo/pull/$prNumber': typeof OwnerRepoPullPrNumberRoute
 }
 export interface FileRoutesByTo {
-  "/": typeof IndexRoute;
-  "/$owner/$repo/pull/$prNumber": typeof OwnerRepoPullPrNumberRoute;
+  '/': typeof IndexRoute
+  '/$owner/$repo/pull/$prNumber': typeof OwnerRepoPullPrNumberRoute
 }
 export interface FileRoutesById {
-  __root__: typeof rootRouteImport;
-  "/": typeof IndexRoute;
-  "/$owner/$repo/pull/$prNumber": typeof OwnerRepoPullPrNumberRoute;
+  __root__: typeof rootRouteImport
+  '/': typeof IndexRoute
+  '/$owner/$repo/pull/$prNumber': typeof OwnerRepoPullPrNumberRoute
 }
 export interface FileRouteTypes {
-  fileRoutesByFullPath: FileRoutesByFullPath;
-  fullPaths: "/" | "/$owner/$repo/pull/$prNumber";
-  fileRoutesByTo: FileRoutesByTo;
-  to: "/" | "/$owner/$repo/pull/$prNumber";
-  id: "__root__" | "/" | "/$owner/$repo/pull/$prNumber";
-  fileRoutesById: FileRoutesById;
+  fileRoutesByFullPath: FileRoutesByFullPath
+  fullPaths: '/' | '/$owner/$repo/pull/$prNumber'
+  fileRoutesByTo: FileRoutesByTo
+  to: '/' | '/$owner/$repo/pull/$prNumber'
+  id: '__root__' | '/' | '/$owner/$repo/pull/$prNumber'
+  fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
-  IndexRoute: typeof IndexRoute;
-  OwnerRepoPullPrNumberRoute: typeof OwnerRepoPullPrNumberRoute;
+  IndexRoute: typeof IndexRoute
+  OwnerRepoPullPrNumberRoute: typeof OwnerRepoPullPrNumberRoute
 }
 
-declare module "@tanstack/react-router" {
+declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
-    "/": {
-      id: "/";
-      path: "/";
-      fullPath: "/";
-      preLoaderRoute: typeof IndexRouteImport;
-      parentRoute: typeof rootRouteImport;
-    };
-    "/$owner/$repo/pull/$prNumber": {
-      id: "/$owner/$repo/pull/$prNumber";
-      path: "/$owner/$repo/pull/$prNumber";
-      fullPath: "/$owner/$repo/pull/$prNumber";
-      preLoaderRoute: typeof OwnerRepoPullPrNumberRouteImport;
-      parentRoute: typeof rootRouteImport;
-    };
+    '/': {
+      id: '/'
+      path: '/'
+      fullPath: '/'
+      preLoaderRoute: typeof IndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/$owner/$repo/pull/$prNumber': {
+      id: '/$owner/$repo/pull/$prNumber'
+      path: '/$owner/$repo/pull/$prNumber'
+      fullPath: '/$owner/$repo/pull/$prNumber'
+      preLoaderRoute: typeof OwnerRepoPullPrNumberRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   OwnerRepoPullPrNumberRoute: OwnerRepoPullPrNumberRoute,
-};
+}
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
-  ._addFileTypes<FileRouteTypes>();
+  ._addFileTypes<FileRouteTypes>()

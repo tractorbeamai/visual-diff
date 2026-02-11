@@ -12,9 +12,11 @@ const queryClient = new QueryClient({
 
 function RootLayout() {
   return (
-    <QueryClientProvider client={queryClient}>
-      <Outlet />
-    </QueryClientProvider>
+    <div className="dark">
+      <QueryClientProvider client={queryClient}>
+        <Outlet />
+      </QueryClientProvider>
+    </div>
   );
 }
 

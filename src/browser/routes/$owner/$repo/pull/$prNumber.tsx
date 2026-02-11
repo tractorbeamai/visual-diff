@@ -25,8 +25,13 @@ import {
   useStartRun,
   useKillRun,
   useKillAllRuns,
-} from "../../../../api";
-import type { Run, AgentMessage } from "../../../../api";
+} from "@/api";
+import type { Run, AgentMessage } from "@/api";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { Separator } from "@/components/ui/separator";
+import { Card, CardContent } from "@/components/ui/card";
+import { cn } from "@/lib/utils";
 
 // ---------------------------------------------------------------------------
 // Route definition
@@ -124,13 +129,13 @@ function PRViewer() {
   const ghUrl = `https://github.com/${owner}/${repo}/pull/${prNumber}`;
 
   return (
-    <div className="flex h-screen flex-col overflow-hidden bg-gray-950 font-sans antialiased text-gray-300">
-      <header className="border-b border-gray-800 px-6 py-4">
+    <div className="flex h-screen flex-col overflow-hidden bg-background font-sans antialiased text-foreground">
+      <header className="border-b border-border px-6 py-4">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-4">
             <div className="flex items-center gap-2">
               <IconGitPullRequest size={20} className="text-green-400" />
-              <h1 className="text-base font-semibold text-white">
+              <h1 className="text-base font-semibold">
                 {owner}/{repo} #{prNumber}
               </h1>
             </div>
@@ -138,28 +143,22 @@ function PRViewer() {
               href={ghUrl}
               target="_blank"
               rel="noopener noreferrer"
-              className="flex items-center gap-1 text-xs text-gray-500 transition-colors hover:text-gray-300"
+              className="flex items-center gap-1 text-xs text-muted-foreground transition-colors hover:text-foreground"
             >
               <IconExternalLink size={12} />
               GitHub
             </a>
           </div>
-          <div className="flex items-center gap-3">
-            <button
-              onClick={handleStart}
-              disabled={startRun.isPending}
-              className="flex items-center gap-1.5 rounded-md border border-blue-500 bg-blue-600 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              {startRun.isPending ? (
-                <IconLoader2 size={14} className="animate-spin" />
-              ) : (
-                <IconPlayerPlay size={14} />
-              )}
-              {startRun.isPending ? "Starting..." : "New run"}
-            </button>
-          </div>
+          <Button onClick={handleStart} disabled={startRun.isPending} size="sm">
+            {startRun.isPending ? (
+              <IconLoader2 size={14} className="animate-spin" />
+            ) : (
+              <IconPlayerPlay size={14} />
+            )}
+            {startRun.isPending ? "Starting..." : "New run"}
+          </Button>
         </div>
-        <div className="mt-2 flex items-center gap-4 text-xs text-gray-500">
+        <div className="mt-2 flex items-center gap-4 text-xs text-muted-foreground">
           {latestCommit && (
             <span>
               Latest commit:{" "}
@@ -167,7 +166,7 @@ function PRViewer() {
                 href={`https://github.com/${owner}/${repo}/commit/${latestCommit}`}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="font-mono text-gray-400 hover:text-gray-200"
+                className="font-mono text-foreground/70 hover:text-foreground"
               >
                 {latestCommit.slice(0, 7)}
               </a>
@@ -182,7 +181,7 @@ function PRViewer() {
           {sandboxId && (
             <span>
               Viewing:{" "}
-              <span className="font-mono text-gray-400">
+              <span className="font-mono text-foreground/70">
                 {sandboxId.slice(0, 8)}
               </span>
             </span>
@@ -209,11 +208,13 @@ function PRViewer() {
         className="min-h-0 flex-1 overflow-y-auto px-6 py-4"
       >
         {lines.length === 0 && agentMessages.length === 0 && (
-          <div className="text-gray-600">Click "New run" to begin.</div>
+          <div className="text-muted-foreground/50">
+            Click "New run" to begin.
+          </div>
         )}
 
         {startLogs.length > 0 && (
-          <div className="space-y-0.5 font-mono text-[12px] leading-relaxed">
+          <div className="space-y-0.5 font-mono text-xs leading-relaxed">
             {startLogs.map((line, i) => (
               <SetupLogEntry key={`s-${i}`} raw={line} />
             ))}
@@ -223,7 +224,7 @@ function PRViewer() {
         {agentStarted && <SectionDivider label="Agent" />}
 
         {agentMessages.length === 0 && agentStarted && !agentEnded && (
-          <div className="text-sm text-gray-500">
+          <div className="text-sm text-muted-foreground">
             Waiting for agent messages...
           </div>
         )}
@@ -236,14 +237,14 @@ function PRViewer() {
           </div>
         )}
 
-        {agentBusy && (
+        {agentBusy && !agentEnded && (
           <div className="mt-3 text-sm text-amber-400">Agent is working...</div>
         )}
 
         {agentEnded && <SectionDivider label="Results" />}
 
         {endLogs.length > 0 && (
-          <div className="space-y-0.5 font-mono text-[12px] leading-relaxed">
+          <div className="space-y-0.5 font-mono text-xs leading-relaxed">
             {endLogs.map((line, i) => (
               <SetupLogEntry key={`e-${i}`} raw={line} />
             ))}
@@ -265,14 +266,15 @@ function SetupLogEntry({ raw }: { raw: string }) {
     const timestamp = new Date(match[1]).toLocaleTimeString();
     const message = match[2];
 
-    let cls = "text-gray-400";
-    if (message.startsWith("ERROR")) cls = "text-red-400";
+    let cls = "text-muted-foreground";
+    if (message.startsWith("ERROR")) cls = "text-destructive";
     else if (message.startsWith("Done")) cls = "font-semibold text-green-400";
-    else if (message.includes("working")) cls = "text-amber-400";
 
     return (
       <div className="flex gap-3">
-        <span className="shrink-0 tabular-nums text-gray-600">{timestamp}</span>
+        <span className="shrink-0 tabular-nums text-muted-foreground/50">
+          {timestamp}
+        </span>
         <span className={cls}>{message}</span>
       </div>
     );
@@ -280,7 +282,7 @@ function SetupLogEntry({ raw }: { raw: string }) {
 
   return (
     <div className="flex gap-3">
-      <span className="text-gray-500">{raw}</span>
+      <span className="text-muted-foreground">{raw}</span>
     </div>
   );
 }
@@ -292,11 +294,11 @@ function SetupLogEntry({ raw }: { raw: string }) {
 function SectionDivider({ label }: { label: string }) {
   return (
     <div className="flex items-center gap-3 py-3">
-      <div className="h-px flex-1 bg-gray-800" />
-      <span className="text-[10px] font-semibold uppercase tracking-widest text-gray-600">
+      <Separator className="flex-1" />
+      <span className="text-xs font-semibold uppercase tracking-widest text-muted-foreground/50">
         {label}
       </span>
-      <div className="h-px flex-1 bg-gray-800" />
+      <Separator className="flex-1" />
     </div>
   );
 }
@@ -330,7 +332,7 @@ function PartView({ part, isAssistant }: { part: Part; isAssistant: boolean }) {
     case "tool":
       return <ToolPartView part={part as SdkToolPart} />;
     case "step-start":
-      return <div className="border-t border-gray-800/30 my-1" />;
+      return <Separator className="my-1 opacity-30" />;
     default:
       return null;
   }
@@ -345,13 +347,14 @@ function TextPartView({
 }) {
   if (!text.trim()) return null;
   return (
-    <pre
-      className={`whitespace-pre-wrap text-[13px] leading-relaxed ${
-        isAssistant ? "text-gray-200" : "text-gray-400"
-      }`}
+    <p
+      className={cn(
+        "whitespace-pre-wrap font-sans text-sm leading-relaxed",
+        isAssistant ? "text-foreground" : "text-muted-foreground",
+      )}
     >
       {text}
-    </pre>
+    </p>
   );
 }
 
@@ -362,33 +365,40 @@ function TextPartView({
 function RunStatusIcon({ status }: { status: Run["status"] }) {
   switch (status) {
     case "queued":
-      return <IconClock size={16} className="text-gray-400" />;
+      return <IconClock size={16} className="text-muted-foreground" />;
     case "running":
       return <IconLoader2 size={16} className="animate-spin text-amber-400" />;
     case "completed":
       return <IconCircleCheck size={16} className="text-green-400" />;
     case "failed":
-      return <IconCircleX size={16} className="text-red-400" />;
+      return <IconCircleX size={16} className="text-destructive" />;
     case "cancelled":
-      return <IconBan size={16} className="text-gray-500" />;
+      return <IconBan size={16} className="text-muted-foreground/50" />;
   }
 }
 
-const statusLabel: Record<Run["status"], string> = {
-  queued: "Queued",
-  running: "Running",
-  completed: "Completed",
-  failed: "Failed",
-  cancelled: "Cancelled",
+const statusConfig: Record<
+  Run["status"],
+  {
+    label: string;
+    variant: "secondary" | "outline" | "default" | "destructive";
+  }
+> = {
+  queued: { label: "Queued", variant: "secondary" },
+  running: { label: "Running", variant: "outline" },
+  completed: { label: "Completed", variant: "default" },
+  failed: { label: "Failed", variant: "destructive" },
+  cancelled: { label: "Cancelled", variant: "secondary" },
 };
 
-const statusColor: Record<Run["status"], string> = {
-  queued: "text-gray-400",
-  running: "text-amber-400",
-  completed: "text-green-400",
-  failed: "text-red-400",
-  cancelled: "text-gray-500",
-};
+function StatusBadge({ status }: { status: Run["status"] }) {
+  const { label, variant } = statusConfig[status];
+  return (
+    <Badge variant={variant} className="text-xs">
+      {label}
+    </Badge>
+  );
+}
 
 function timeAgo(dateStr: string): string {
   const seconds = Math.floor(
@@ -424,8 +434,8 @@ function RunsPanel({
 }) {
   if (runsLoading && runs.length === 0) {
     return (
-      <div className="border-b border-gray-800 px-6 py-3">
-        <div className="flex items-center gap-2 text-xs text-gray-500">
+      <div className="border-b border-border px-6 py-3">
+        <div className="flex items-center gap-2 text-xs text-muted-foreground">
           <IconLoader2 size={14} className="animate-spin" />
           Loading runs...
         </div>
@@ -440,18 +450,19 @@ function RunsPanel({
   );
 
   return (
-    <div className="border-b border-gray-800 px-6 py-3">
+    <div className="border-b border-border px-6 py-3">
       <div className="mb-2 flex items-center gap-2">
-        <IconGitPullRequest size={14} className="text-gray-500" />
-        <h2 className="text-xs font-semibold uppercase tracking-wide text-gray-500">
+        <IconGitPullRequest size={14} className="text-muted-foreground" />
+        <h2 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
           Runs
         </h2>
         {hasActive && (
-          <button
+          <Button
             onClick={onKillAll}
             disabled={killingAll}
-            className="ml-auto flex items-center gap-1 rounded border border-red-900/50 px-2 py-0.5 text-[10px] font-medium text-red-400 transition-colors hover:border-red-700 hover:bg-red-950/40 disabled:opacity-50"
-            title="Cancel all active runs"
+            variant="destructive"
+            size="xs"
+            className="ml-auto"
           >
             {killingAll ? (
               <IconLoader2 size={12} className="animate-spin" />
@@ -459,7 +470,7 @@ function RunsPanel({
               <IconSkull size={12} />
             )}
             Cancel all
-          </button>
+          </Button>
         )}
       </div>
       <div className="flex flex-wrap gap-2">
@@ -469,13 +480,15 @@ function RunsPanel({
             run.status === "queued" || run.status === "running";
           const isKilling = killingIds.has(run.id);
           return (
-            <div
+            <Card
               key={run.id}
-              className={`group flex items-center gap-2 rounded-lg border px-3 py-2 text-xs transition-all ${
+              size="sm"
+              className={cn(
+                "group flex-row items-center gap-2 px-3 py-2 text-xs transition-all",
                 isActive
-                  ? "border-blue-500/40 bg-blue-950/30"
-                  : "border-gray-800 bg-gray-900/40 hover:border-gray-700 hover:bg-gray-900/60"
-              }`}
+                  ? "ring-primary/40 bg-primary/5"
+                  : "hover:ring-foreground/20 hover:bg-muted/50",
+              )}
             >
               <button
                 onClick={() => onSelectRun(run.id)}
@@ -484,16 +497,12 @@ function RunsPanel({
                 <RunStatusIcon status={run.status} />
                 <div className="flex flex-col gap-0.5">
                   <div className="flex items-center gap-1.5">
-                    <span className="font-mono text-gray-300">
+                    <span className="font-mono text-foreground">
                       {run.commit_sha.slice(0, 7)}
                     </span>
-                    <span
-                      className={`text-[10px] font-medium ${statusColor[run.status]}`}
-                    >
-                      {statusLabel[run.status]}
-                    </span>
+                    <StatusBadge status={run.status} />
                   </div>
-                  <div className="flex items-center gap-2 text-[10px] text-gray-600">
+                  <div className="flex items-center gap-2 text-xs text-muted-foreground/50">
                     <span className="flex items-center gap-1">
                       <IconBox size={10} />
                       {run.id.slice(0, 8)}
@@ -506,23 +515,24 @@ function RunsPanel({
                 </div>
               </button>
               {isKillable && (
-                <button
+                <Button
                   onClick={(e) => {
                     e.stopPropagation();
                     onKillRun(run.id);
                   }}
                   disabled={isKilling}
-                  className="ml-1 rounded p-1 text-gray-600 transition-colors hover:bg-red-950/60 hover:text-red-400 disabled:opacity-50"
-                  title="Cancel run"
+                  variant="ghost"
+                  size="icon-xs"
+                  className="ml-1 text-muted-foreground hover:text-destructive"
                 >
                   {isKilling ? (
                     <IconLoader2 size={14} className="animate-spin" />
                   ) : (
                     <IconSkull size={14} />
                   )}
-                </button>
+                </Button>
               )}
-            </div>
+            </Card>
           );
         })}
       </div>
@@ -540,11 +550,14 @@ function ToolPartView({ part }: { part: SdkToolPart }) {
   const { state } = part;
   const status = state.status;
 
-  const statusColors: Record<string, string> = {
-    pending: "bg-gray-700 text-gray-400",
-    running: "bg-amber-900/60 text-amber-300",
-    completed: "bg-green-900/60 text-green-300",
-    error: "bg-red-900/60 text-red-300",
+  const badgeVariant: Record<
+    string,
+    "secondary" | "default" | "destructive" | "outline"
+  > = {
+    pending: "secondary",
+    running: "outline",
+    completed: "default",
+    error: "destructive",
   };
 
   const title =
@@ -558,62 +571,69 @@ function ToolPartView({ part }: { part: SdkToolPart }) {
   const hasDetails = hasInput || hasOutput || hasError;
 
   return (
-    <div className="rounded border border-gray-800 bg-gray-900/60 text-[12px]">
+    <Card size="sm" className="text-xs">
       <button
         onClick={() => hasDetails && setExpanded((v) => !v)}
-        className={`flex w-full items-center gap-2 px-3 py-1.5 text-left ${
-          hasDetails ? "cursor-pointer hover:bg-gray-800/40" : "cursor-default"
-        }`}
+        className={cn(
+          "flex w-full items-center gap-2 px-3 py-1.5 text-left",
+          hasDetails ? "cursor-pointer hover:bg-muted/50" : "cursor-default",
+        )}
       >
         {!!hasDetails && (
           <span
-            className={`text-[10px] text-gray-600 transition-transform ${expanded ? "rotate-90" : ""}`}
+            className={cn(
+              "text-xs text-muted-foreground/50 transition-transform",
+              expanded && "rotate-90",
+            )}
           >
             &#9654;
           </span>
         )}
-        <span className="font-mono font-medium text-gray-300">{name}</span>
-        {title && <span className="truncate text-gray-500">{title}</span>}
-        <span
-          className={`ml-auto shrink-0 rounded-full px-1.5 py-0.5 text-[10px] font-medium ${statusColors[status] ?? statusColors.pending}`}
+        <span className="font-mono font-medium text-foreground">{name}</span>
+        {title && (
+          <span className="truncate text-muted-foreground">{title}</span>
+        )}
+        <Badge
+          variant={badgeVariant[status] ?? "secondary"}
+          className="ml-auto text-xs"
         >
           {status}
-        </span>
+        </Badge>
       </button>
       {expanded && (
-        <div className="space-y-2 border-t border-gray-800 px-3 py-2">
+        <CardContent className="space-y-2 border-t border-border px-3 py-2">
           {hasInput && (
             <div>
-              <div className="mb-0.5 text-[10px] font-medium uppercase tracking-wide text-gray-600">
+              <div className="mb-0.5 text-xs font-medium uppercase tracking-wide text-muted-foreground/50">
                 Input
               </div>
-              <pre className="max-h-40 overflow-auto whitespace-pre-wrap text-gray-400">
+              <pre className="max-h-40 overflow-auto whitespace-pre-wrap text-muted-foreground">
                 {JSON.stringify(state.input, null, 2)}
               </pre>
             </div>
           )}
           {hasOutput && (
             <div>
-              <div className="mb-0.5 text-[10px] font-medium uppercase tracking-wide text-gray-600">
+              <div className="mb-0.5 text-xs font-medium uppercase tracking-wide text-muted-foreground/50">
                 Output
               </div>
-              <pre className="max-h-60 overflow-auto whitespace-pre-wrap text-gray-400">
+              <pre className="max-h-60 overflow-auto whitespace-pre-wrap text-muted-foreground">
                 {state.status === "completed" ? state.output : ""}
               </pre>
             </div>
           )}
           {hasError && (
             <div>
-              <div className="mb-0.5 text-[10px] font-medium uppercase tracking-wide text-red-500">
+              <div className="mb-0.5 text-xs font-medium uppercase tracking-wide text-destructive">
                 Error
               </div>
-              <pre className="max-h-40 overflow-auto whitespace-pre-wrap text-red-400">
+              <pre className="max-h-40 overflow-auto whitespace-pre-wrap text-destructive">
                 {state.status === "error" ? state.error : ""}
               </pre>
             </div>
           )}
-        </div>
+        </CardContent>
       )}
-    </div>
+    </Card>
   );
 }
