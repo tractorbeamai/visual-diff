@@ -1,5 +1,6 @@
 import { createAppAuth } from "@octokit/auth-app";
 import { Octokit } from "@octokit/rest";
+import { timingSafeEqual } from "./crypto";
 import type { Env, ChangedFile } from "./types";
 
 /**
@@ -168,14 +169,6 @@ function arrayBufferToHex(buffer: ArrayBuffer): string {
   return [...new Uint8Array(buffer)]
     .map((b) => b.toString(16).padStart(2, "0"))
     .join("");
-}
-
-function timingSafeEqual(a: string, b: string): boolean {
-  if (a.length !== b.length) return false;
-  const encoder = new TextEncoder();
-  const aBytes = encoder.encode(a);
-  const bBytes = encoder.encode(b);
-  return crypto.subtle.timingSafeEqual(aBytes, bBytes);
 }
 
 /**

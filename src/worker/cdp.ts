@@ -23,6 +23,7 @@ import puppeteer, {
   type Page,
   type KeyInput,
 } from "@cloudflare/puppeteer";
+import { timingSafeEqual } from "./crypto";
 import type { Env } from "./types";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -1182,10 +1183,4 @@ function verifySecret(url: URL, env: Env): boolean {
   const provided = url.searchParams.get("secret");
   if (!provided || !env.INTERNAL_SECRET) return false;
   return timingSafeEqual(provided, env.INTERNAL_SECRET);
-}
-
-function timingSafeEqual(a: string, b: string): boolean {
-  if (a.length !== b.length) return false;
-  const encoder = new TextEncoder();
-  return crypto.subtle.timingSafeEqual(encoder.encode(a), encoder.encode(b));
 }

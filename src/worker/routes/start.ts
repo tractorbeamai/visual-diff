@@ -5,7 +5,7 @@ import {
   parsePRUrl,
   lookupInstallationId,
 } from "../github";
-import { buildQueueMessageFromPR } from "../queue";
+import { buildQueueMessage } from "../queue";
 import { registerRun } from "../db";
 import type { Env } from "../types";
 
@@ -62,14 +62,15 @@ start.post("/", async (c) => {
     commitSha: prDetails.headSha,
   });
 
-  const message = await buildQueueMessageFromPR(
-    c.env,
+  const message = await buildQueueMessage(c.env, {
     owner,
     repo,
     prNumber,
-    prDetails.headSha,
+    commitSha: prDetails.headSha,
     installationId,
-  );
+    prTitle: prDetails.title,
+    prDescription: prDetails.body,
+  });
   await c.env.SCREENSHOT_QUEUE.send({ ...message, sandboxId: sid });
 
   return c.json(

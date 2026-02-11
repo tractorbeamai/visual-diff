@@ -1,5 +1,7 @@
 import type { Sandbox as SandboxDO } from "@cloudflare/sandbox";
 
+export type { Run, RunStatus } from "./run-types";
+
 /**
  * Worker environment -- extends the generated Cloudflare.Env with secrets
  * and properly-typed bindings.
@@ -43,30 +45,6 @@ export interface ChangedFile {
   additions: number;
   deletions: number;
   patch?: string;
-}
-
-/**
- * Status of a screenshot run tracked in D1.
- */
-export type RunStatus =
-  | "queued"
-  | "running"
-  | "completed"
-  | "cancelled"
-  | "failed";
-
-/**
- * A row from the `runs` table.
- */
-export interface Run {
-  id: string;
-  owner: string;
-  repo: string;
-  pr_number: number;
-  commit_sha: string;
-  status: RunStatus;
-  created_at: string;
-  updated_at: string;
 }
 
 /**

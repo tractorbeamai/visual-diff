@@ -46,7 +46,16 @@ webhook.post("/", async (c) => {
       commitSha,
     });
 
-    const message = await buildQueueMessage(c.env, payload, pr);
+    const installationId = payload.installation.id;
+    const message = await buildQueueMessage(c.env, {
+      owner,
+      repo,
+      prNumber: pr.number,
+      commitSha,
+      installationId,
+      prTitle: pr.title,
+      prDescription: pr.body ?? "",
+    });
     await c.env.SCREENSHOT_QUEUE.send({ ...message, sandboxId: sid });
     return c.text("Accepted", 202);
   }

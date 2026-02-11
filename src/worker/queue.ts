@@ -1,4 +1,3 @@
-import { getSandbox } from "@cloudflare/sandbox";
 import {
   createOctokit,
   fetchPRDetails,
@@ -6,8 +5,8 @@ import {
   fetchChangedFiles,
 } from "./github";
 import { startScreenshotJob } from "./sandbox";
+import { failAndCleanupSandbox } from "./cleanup";
 import { isRunActive, updateRunStatus } from "./db";
-import { syncLogsToR2 } from "./storage";
 import type { Env, QueueMessage } from "./types";
 
 /**
@@ -36,94 +35,51 @@ export async function handleQueue(
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       console.error("Queue job failed during setup:", err);
-
-      // Mark the run as failed in D1
-      try {
-        await updateRunStatus(env.DB, job.sandboxId, "failed");
-      } catch {
-        // Best effort
-      }
-
-      // Best-effort: write error to the sandbox log + sync to R2
-      try {
-        const sandbox = getSandbox(env.Sandbox, job.sandboxId);
-        const ts = new Date().toISOString();
-        const clean = message
-          .replace(/x-access-token:[^\s@]+/g, "x-access-token:***")
-          .replace(/'/g, "'\\''");
-        await sandbox.exec(
-          `echo '${ts} ERROR: Job failed -- ${clean}'  >> /workspace/agent.log`,
-        );
-        // Flush logs to R2 before destroying the sandbox
-        const logResult = await sandbox.exec(
-          "cat /workspace/agent.log 2>/dev/null || true",
-        );
-        const logContent = logResult.stdout ?? "";
-        if (logContent.trim()) {
-          await syncLogsToR2(
-            env,
-            job.owner,
-            job.repo,
-            job.sandboxId,
-            logContent,
-          );
-        }
-      } catch {
-        // Sandbox may not be reachable
-      }
-
-      // Destroy sandbox on setup failure
-      try {
-        const sandbox = getSandbox(env.Sandbox, job.sandboxId);
-        await sandbox.destroy();
-        console.log(
-          `Sandbox ${job.sandboxId.slice(0, 8)} destroyed after failure`,
-        );
-      } catch {
-        // Best effort
-      }
-
-      // No retries -- ack and move on
+      await failAndCleanupSandbox(env, job, message);
       msg.ack();
     }
   }
 }
 
 /**
- * Build a QueueMessage from a pull_request webhook payload.
+ * Build a QueueMessage with pre-fetched PR metadata.
+ * Only fetches the diff and changed files from GitHub.
  */
 export async function buildQueueMessage(
   env: Env,
-  payload: {
-    repository: { owner: { login: string }; name: string };
-    installation: { id: number };
-  },
-  pr: {
-    number: number;
-    title: string;
-    body: string | null;
-    merge_commit_sha?: string | null;
-    head: { sha: string };
+  opts: {
+    owner: string;
+    repo: string;
+    prNumber: number;
+    commitSha: string;
+    installationId: number;
+    prTitle: string;
+    prDescription: string;
   },
 ): Promise<Omit<QueueMessage, "sandboxId">> {
-  const owner = payload.repository.owner.login;
-  const repo = payload.repository.name;
-  const installationId = payload.installation.id;
-  const commitSha = pr.merge_commit_sha ?? pr.head.sha;
+  const octokit = createOctokit(env, opts.installationId);
 
-  return buildQueueMessageFromPR(
-    env,
-    owner,
-    repo,
-    pr.number,
-    commitSha,
-    installationId,
-  );
+  const [diff, changedFiles] = await Promise.all([
+    fetchPRDiff(octokit, opts.owner, opts.repo, opts.prNumber),
+    fetchChangedFiles(octokit, opts.owner, opts.repo, opts.prNumber),
+  ]);
+
+  return {
+    owner: opts.owner,
+    repo: opts.repo,
+    prNumber: opts.prNumber,
+    commitSha: opts.commitSha,
+    installationId: opts.installationId,
+    prTitle: opts.prTitle,
+    prDescription: opts.prDescription,
+    prDiff: diff,
+    changedFiles,
+  };
 }
 
 /**
- * Build a QueueMessage by fetching PR details from GitHub.
- * Shared by webhook and start routes.
+ * Build a QueueMessage by fetching all PR details from GitHub.
+ * Used when the caller doesn't already have PR metadata (e.g. comment webhook).
  */
 export async function buildQueueMessageFromPR(
   env: Env,
@@ -134,14 +90,9 @@ export async function buildQueueMessageFromPR(
   installationId: number,
 ): Promise<Omit<QueueMessage, "sandboxId">> {
   const octokit = createOctokit(env, installationId);
+  const prDetails = await fetchPRDetails(octokit, owner, repo, prNumber);
 
-  const [prDetails, diff, changedFiles] = await Promise.all([
-    fetchPRDetails(octokit, owner, repo, prNumber),
-    fetchPRDiff(octokit, owner, repo, prNumber),
-    fetchChangedFiles(octokit, owner, repo, prNumber),
-  ]);
-
-  return {
+  return buildQueueMessage(env, {
     owner,
     repo,
     prNumber,
@@ -149,7 +100,5 @@ export async function buildQueueMessageFromPR(
     installationId,
     prTitle: prDetails.title,
     prDescription: prDetails.body,
-    prDiff: diff,
-    changedFiles,
-  };
+  });
 }

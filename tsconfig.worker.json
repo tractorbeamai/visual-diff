@@ -7,9 +7,5 @@
     "resolveJsonModule": true,
     "forceConsistentCasingInFileNames": true
   },
-  "include": [
-    "src/worker",
-    "worker-configuration.d.ts",
-    "test"
-  ]
+  "include": ["src/worker", "worker-configuration.d.ts", "test"]
 }

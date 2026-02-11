@@ -1,20 +1,12 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import type { Message, Part, SessionStatus } from "@opencode-ai/sdk";
+import type { Run } from "../worker/run-types";
+
+export type { Run };
 
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
-
-export interface Run {
-  id: string;
-  owner: string;
-  repo: string;
-  pr_number: number;
-  commit_sha: string;
-  status: "queued" | "running" | "completed" | "cancelled" | "failed";
-  created_at: string;
-  updated_at: string;
-}
 
 export interface AgentMessage {
   info: Message;

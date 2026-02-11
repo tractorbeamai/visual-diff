@@ -21,6 +21,224 @@ import {
 import { createOctokit, getInstallationToken, postPRComment } from "./github";
 import { isRunActive, updateRunStatus } from "./db";
 
+// ─── Shared context passed to cleanup helpers ────────────────────────────────
+
+type SandboxStub = ReturnType<typeof getSandbox>;
+
+interface CleanupContext {
+  sandbox: SandboxStub;
+  client: OpencodeClient;
+  server: { close(): Promise<void> };
+  sessionId: string;
+  directory: string;
+  env: Env;
+  job: QueueMessage;
+  log(message: string): Promise<void>;
+  flushLogs(): Promise<void>;
+  flushMessages(): Promise<void>;
+}
+
+// ─── Extracted helpers ───────────────────────────────────────────────────────
+
+/**
+ * Poll the sandbox for agent completion (session idle) or manifest file,
+ * periodically flushing logs/messages to R2.
+ */
+async function pollForCompletion(
+  ctx: CleanupContext,
+): Promise<{ manifestFound: boolean; cancelled: boolean }> {
+  const deadline = Date.now() + 600_000;
+  let manifestFound = false;
+  let agentDone = false;
+  let pollCount = 0;
+
+  while (Date.now() < deadline) {
+    await new Promise((r) => setTimeout(r, 3_000));
+    pollCount++;
+
+    // Check if this run was cancelled (superseded by a newer run)
+    if (pollCount % 10 === 0) {
+      const stillActive = await isRunActive(ctx.env.DB, ctx.job.sandboxId);
+      if (!stillActive) {
+        await ctx.log("Run was cancelled (superseded by a newer run).");
+        return { manifestFound: false, cancelled: true };
+      }
+    }
+
+    // Check manifest every ~10 polls (30s)
+    if (pollCount % 10 === 0) {
+      const check = await ctx.sandbox.exec(
+        "test -f /workspace/screenshot-manifest.json && echo EXISTS",
+      );
+      if (check.stdout?.includes("EXISTS")) {
+        manifestFound = true;
+        await ctx.log("Manifest file detected.");
+        break;
+      }
+    }
+
+    // Poll session status to detect when agent finishes
+    try {
+      const { data: statuses } = await ctx.client.session.status({
+        query: { directory: ctx.directory },
+      });
+      if (statuses) {
+        const status = (statuses as Record<string, { type: string }>)[
+          ctx.sessionId
+        ];
+        if (status?.type === "idle" && pollCount > 1) {
+          agentDone = true;
+        }
+      }
+    } catch {
+      // Non-critical
+    }
+
+    // If agent finished, check for manifest one more time then break
+    if (agentDone) {
+      await ctx.log("Agent session is idle -- checking for manifest...");
+      const check = await ctx.sandbox.exec(
+        "test -f /workspace/screenshot-manifest.json && echo EXISTS",
+      );
+      if (check.stdout?.includes("EXISTS")) {
+        manifestFound = true;
+        await ctx.log("Manifest file detected.");
+      } else {
+        await ctx.log(
+          "Agent finished but no manifest found. Waiting 5s and retrying...",
+        );
+        await new Promise((r) => setTimeout(r, 5_000));
+        const retry = await ctx.sandbox.exec(
+          "test -f /workspace/screenshot-manifest.json && echo EXISTS",
+        );
+        if (retry.stdout?.includes("EXISTS")) {
+          manifestFound = true;
+          await ctx.log("Manifest file detected on retry.");
+        }
+      }
+      break;
+    }
+
+    // Sync logs + messages to R2 every ~30s
+    if (pollCount % 10 === 0) {
+      await Promise.all([ctx.flushLogs(), ctx.flushMessages()]);
+    }
+  }
+
+  return { manifestFound, cancelled: false };
+}
+
+/**
+ * Read the screenshot manifest, upload each screenshot to R2, and post
+ * a summary comment on the PR.
+ */
+async function uploadAndComment(ctx: CleanupContext): Promise<void> {
+  await ctx.log("Reading screenshot manifest...");
+  const manifestResult = await ctx.sandbox.readFile(
+    "/workspace/screenshot-manifest.json",
+  );
+  const manifest: ScreenshotManifest = JSON.parse(manifestResult.content);
+
+  if (manifest.screenshots.length === 0) {
+    await ctx.log("Agent produced no screenshots.");
+    const octokit = createOctokit(ctx.env, ctx.job.installationId);
+    await postPRComment(
+      octokit,
+      ctx.job.owner,
+      ctx.job.repo,
+      ctx.job.prNumber,
+      `## Visual Diff\n\nNo screenshots were taken for commit \`${ctx.job.commitSha.slice(0, 7)}\`. The agent could not determine which pages to screenshot, or the app failed to start.`,
+    );
+    return;
+  }
+
+  await ctx.log(
+    `Uploading ${manifest.screenshots.length} screenshots to R2...`,
+  );
+  const uploaded: UploadedScreenshot[] = [];
+  for (const entry of manifest.screenshots) {
+    const stream = await ctx.sandbox.readFileStream(entry.path);
+    const { content } = await collectFile(stream);
+
+    const data =
+      content instanceof Uint8Array
+        ? content
+        : new TextEncoder().encode(content);
+
+    const key = buildR2Key(
+      ctx.job.owner,
+      ctx.job.repo,
+      ctx.job.prNumber,
+      entry.route,
+    );
+    const url = await uploadScreenshot(ctx.env, key, data);
+
+    uploaded.push({
+      route: entry.route,
+      description: entry.description,
+      url,
+    });
+    await ctx.log(`  Uploaded: ${entry.route}`);
+  }
+
+  await ctx.log("Posting PR comment...");
+  const octokit = createOctokit(ctx.env, ctx.job.installationId);
+  const commentBody = buildCommentMarkdown(ctx.job.commitSha, uploaded);
+  await postPRComment(
+    octokit,
+    ctx.job.owner,
+    ctx.job.repo,
+    ctx.job.prNumber,
+    commentBody,
+  );
+
+  await ctx.log(
+    `Done! Posted ${uploaded.length} screenshots to PR #${ctx.job.prNumber}.`,
+  );
+  console.log(
+    `Posted ${uploaded.length} screenshots to PR #${ctx.job.prNumber}`,
+  );
+}
+
+/**
+ * Best-effort teardown: flush data to R2, update run status, close the
+ * OpenCode server, kill sandbox processes, and destroy the sandbox.
+ */
+async function cleanupResources(
+  ctx: CleanupContext,
+  finalStatus: "completed" | "failed" | null,
+): Promise<void> {
+  // Flush logs + messages to R2 BEFORE updating run status.
+  // This ensures R2 has the final data when the frontend sees the
+  // status change and switches from live sandbox to R2 fallback.
+  await Promise.all([ctx.flushLogs(), ctx.flushMessages()]);
+  if (finalStatus) {
+    try {
+      await updateRunStatus(ctx.env.DB, ctx.job.sandboxId, finalStatus);
+    } catch {
+      // Best effort
+    }
+  }
+  try {
+    await ctx.server.close();
+  } catch {
+    // Best effort
+  }
+  try {
+    await ctx.sandbox.killAllProcesses();
+  } catch {
+    // Best effort
+  }
+  try {
+    await ctx.sandbox.destroy();
+    console.log(`Sandbox ${ctx.job.sandboxId.slice(0, 8)} destroyed`);
+  } catch {
+    // Best effort
+  }
+}
+
+// ─── Main entry point ────────────────────────────────────────────────────────
+
 /**
  * Start a screenshot job: spin up sandbox, clone repo, start the OpenCode
  * agent, and fire off the prompt.
@@ -256,209 +474,56 @@ export async function startScreenshotJob(
   await log("--- AGENT_START ---");
   await flushLogs();
 
+  // Build the shared context for cleanup helpers
+  const ctx: CleanupContext = {
+    sandbox,
+    client,
+    server,
+    sessionId,
+    directory,
+    env,
+    job,
+    log,
+    flushLogs,
+    flushMessages,
+  };
+
   // ── Cleanup closure ─────────────────────────────────────────────────────
   // The caller runs this via ctx.waitUntil() after ack'ing the queue message,
   // so the 10-minute polling loop doesn't block subsequent jobs.
   return async () => {
-    // Track final status; set to null for cancelled runs (status already set
-    // elsewhere) so the finally block knows not to overwrite it.
     let finalStatus: "completed" | "failed" | null = "failed";
 
     try {
-      // Poll for manifest + session status every 3s.
-      // Message progress is now served by the /messages endpoint; the
-      // cleanup closure only needs to detect completion.
-      const deadline = Date.now() + 600_000;
-      let manifestFound = false;
-      let agentDone = false;
-      let pollCount = 0;
+      const { manifestFound, cancelled } = await pollForCompletion(ctx);
 
-      while (Date.now() < deadline) {
-        await new Promise((r) => setTimeout(r, 3_000));
-        pollCount++;
-
-        // Check if this run was cancelled (superseded by a newer run)
-        if (pollCount % 10 === 0) {
-          const stillActive = await isRunActive(env.DB, job.sandboxId);
-          if (!stillActive) {
-            await log("Run was cancelled (superseded by a newer run).");
-            finalStatus = null;
-            return;
-          }
-        }
-
-        // Check manifest every ~10 polls (30s)
-        if (pollCount % 10 === 0) {
-          const check = await sandbox.exec(
-            "test -f /workspace/screenshot-manifest.json && echo EXISTS",
-          );
-          if (check.stdout?.includes("EXISTS")) {
-            manifestFound = true;
-            await log("Manifest file detected.");
-            break;
-          }
-        }
-
-        // Poll session status to detect when agent finishes
-        try {
-          const { data: statuses } = await client.session.status({
-            query: { directory },
-          });
-          if (statuses) {
-            const status = (statuses as Record<string, { type: string }>)[
-              sessionId
-            ];
-            if (status?.type === "idle" && pollCount > 1) {
-              agentDone = true;
-            }
-          }
-        } catch {
-          // Non-critical
-        }
-
-        // If agent finished, check for manifest one more time then break
-        if (agentDone) {
-          await log("Agent session is idle -- checking for manifest...");
-          const check = await sandbox.exec(
-            "test -f /workspace/screenshot-manifest.json && echo EXISTS",
-          );
-          if (check.stdout?.includes("EXISTS")) {
-            manifestFound = true;
-            await log("Manifest file detected.");
-          } else {
-            await log(
-              "Agent finished but no manifest found. Waiting 5s and retrying...",
-            );
-            await new Promise((r) => setTimeout(r, 5_000));
-            const retry = await sandbox.exec(
-              "test -f /workspace/screenshot-manifest.json && echo EXISTS",
-            );
-            if (retry.stdout?.includes("EXISTS")) {
-              manifestFound = true;
-              await log("Manifest file detected on retry.");
-            }
-          }
-          break;
-        }
-
-        // Sync logs + messages to R2 every ~30s
-        if (pollCount % 10 === 0) {
-          await Promise.all([flushLogs(), flushMessages()]);
-        }
+      if (cancelled) {
+        finalStatus = null;
+        return;
       }
 
-      await log("--- AGENT_END ---");
-      await Promise.all([flushLogs(), flushMessages()]);
+      await ctx.log("--- AGENT_END ---");
+      await Promise.all([ctx.flushLogs(), ctx.flushMessages()]);
 
       if (!manifestFound) {
-        await log("ERROR: Agent timed out after 10 minutes.");
+        await ctx.log("ERROR: Agent timed out after 10 minutes.");
         throw new Error(
           "Agent timed out after 10 minutes without producing a manifest",
         );
       }
 
-      // Read the screenshot manifest the agent produced
-      await log("Reading screenshot manifest...");
-      const manifestResult = await sandbox.readFile(
-        "/workspace/screenshot-manifest.json",
-      );
-      const manifest: ScreenshotManifest = JSON.parse(manifestResult.content);
-
-      if (manifest.screenshots.length === 0) {
-        await log("Agent produced no screenshots.");
-        finalStatus = "completed";
-        const octokit = createOctokit(env, job.installationId);
-        await postPRComment(
-          octokit,
-          job.owner,
-          job.repo,
-          job.prNumber,
-          `## Visual Diff\n\nNo screenshots were taken for commit \`${job.commitSha.slice(0, 7)}\`. The agent could not determine which pages to screenshot, or the app failed to start.`,
-        );
-        return;
-      }
-
-      // Upload each screenshot to R2
-      await log(
-        `Uploading ${manifest.screenshots.length} screenshots to R2...`,
-      );
-      const uploaded: UploadedScreenshot[] = [];
-      for (const entry of manifest.screenshots) {
-        const stream = await sandbox.readFileStream(entry.path);
-        const { content } = await collectFile(stream);
-
-        const data =
-          content instanceof Uint8Array
-            ? content
-            : new TextEncoder().encode(content);
-
-        const key = buildR2Key(job.owner, job.repo, job.prNumber, entry.route);
-        const url = await uploadScreenshot(env, key, data);
-
-        uploaded.push({
-          route: entry.route,
-          description: entry.description,
-          url,
-        });
-        await log(`  Uploaded: ${entry.route}`);
-      }
-
-      // Post the PR comment with screenshot images
-      await log("Posting PR comment...");
-      const octokit = createOctokit(env, job.installationId);
-      const commentBody = buildCommentMarkdown(job.commitSha, uploaded);
-      await postPRComment(
-        octokit,
-        job.owner,
-        job.repo,
-        job.prNumber,
-        commentBody,
-      );
-
+      await uploadAndComment(ctx);
       finalStatus = "completed";
-      await log(
-        `Done! Posted ${uploaded.length} screenshots to PR #${job.prNumber}.`,
-      );
-      console.log(
-        `Posted ${uploaded.length} screenshots to PR #${job.prNumber}`,
-      );
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
-      // finalStatus stays "failed"
       try {
-        await log(`ERROR: ${message}`);
+        await ctx.log(`ERROR: ${message}`);
       } catch {
         // Log helper may fail if sandbox is gone
       }
       throw err;
     } finally {
-      // Flush logs + messages to R2 BEFORE updating run status.
-      // This ensures R2 has the final data when the frontend sees the
-      // status change and switches from live sandbox to R2 fallback.
-      await Promise.all([flushLogs(), flushMessages()]);
-      if (finalStatus) {
-        try {
-          await updateRunStatus(env.DB, job.sandboxId, finalStatus);
-        } catch {
-          // Best effort
-        }
-      }
-      try {
-        await server.close();
-      } catch {
-        // Best effort
-      }
-      try {
-        await sandbox.killAllProcesses();
-      } catch {
-        // Best effort
-      }
-      try {
-        await sandbox.destroy();
-        console.log(`Sandbox ${job.sandboxId.slice(0, 8)} destroyed`);
-      } catch {
-        // Best effort
-      }
+      await cleanupResources(ctx, finalStatus);
     }
   };
 }
