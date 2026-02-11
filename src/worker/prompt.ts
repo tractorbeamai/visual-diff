@@ -1,6 +1,6 @@
 /**
  * Builds the system prompt for the visual diff agent.
- * Config values come from environment variables set by the Worker via sandbox.setEnvVars().
+ * Kept in a separate file so it's testable without importing @cloudflare/sandbox.
  */
 export function buildSystemPrompt(config: {
   cdpUrl: string;
@@ -39,19 +39,32 @@ Read these first:
 
    Then set the auth header so preview URLs are accessible:
    \`\`\`
-   set headers {"X-Screenshot-Auth": "${config.screenshotSecret}"}
+   agent-browser set headers {"X-Screenshot-Auth": "${config.screenshotSecret}"}
    \`\`\`
 
    For each route, navigate and screenshot:
    \`\`\`
-   open ${config.previewUrl}{route}
-   snapshot -i
-   screenshot /workspace/screenshots/{route-slug}.png
+   agent-browser open ${config.previewUrl}{route}
+   agent-browser snapshot -i
+   agent-browser screenshot /workspace/screenshots/{route-slug}.png
    \`\`\`
 
    If the app requires authentication, look at existing test files (Playwright, Cypress) to find test credentials and login flows. Perform the login flow before taking screenshots of protected routes.
 
-8. **Call submit_screenshots** with the list of screenshots you took. Include the file path, route, and a brief description for each.
+8. **Write the screenshot manifest** to /workspace/screenshot-manifest.json with this exact format:
+   \`\`\`json
+   {
+     "screenshots": [
+       {
+         "path": "/workspace/screenshots/dashboard.png",
+         "route": "/dashboard",
+         "description": "Dashboard page after changes"
+       }
+     ]
+   }
+   \`\`\`
+   Include the absolute path, route, and a brief description for each screenshot.
+   If you could not take any screenshots, write an empty array: {"screenshots": []}
 
 ## Important notes
 
@@ -60,5 +73,5 @@ Read these first:
 - Take screenshots at 1280x720 viewport if possible.
 - Wait for pages to be fully loaded before screenshotting (wait for network idle or specific elements).
 - If you can't determine which routes changed, screenshot the main/index route at minimum.
-- If the app fails to start, report what went wrong but still call submit_screenshots with an empty array.`;
+- If the app fails to start, report what went wrong but still write the manifest with an empty array.`;
 }

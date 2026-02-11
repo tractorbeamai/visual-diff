@@ -1,9 +1,13 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "visual-diff",
-  "main": "src/index.ts",
+  "main": "./src/worker/index.ts",
   "compatibility_date": "2025-05-06",
   "compatibility_flags": ["nodejs_compat"],
+  "assets": {
+    "directory": "./dist/client",
+    "not_found_handling": "single-page-application",
+  },
   "observability": {
     "enabled": true,
     "traces": {
@@ -31,9 +35,6 @@
       "tag": "v1",
     },
   ],
-  "ai": {
-    "binding": "AI",
-  },
   "browser": {
     "binding": "BROWSER",
   },
@@ -54,11 +55,10 @@
       {
         "queue": "visual-diff-jobs",
         "max_retries": 2,
+        "visibility_timeout_ms": 900000,
+        "max_batch_timeout": 0,
       },
     ],
-  },
-  "vars": {
-    "AI_GATEWAY_ID": "visual-diff",
   },
   "routes": [
     {

@@ -23,6 +23,7 @@ export interface Env extends Omit<Cloudflare.Env, "Sandbox"> {
  * produce the same message shape.
  */
 export interface QueueMessage {
+  sandboxId: string;
   owner: string;
   repo: string;
   prNumber: number;

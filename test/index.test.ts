@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { verifyWebhookSignature } from "./github";
+import { verifyWebhookSignature } from "../src/worker/github";
 
 describe("verifyWebhookSignature", () => {
   it("rejects empty signatures", async () => {
@@ -8,7 +8,11 @@ describe("verifyWebhookSignature", () => {
   });
 
   it("rejects wrong signatures", async () => {
-    const valid = await verifyWebhookSignature("secret", "payload", "sha256=wrong");
+    const valid = await verifyWebhookSignature(
+      "secret",
+      "payload",
+      "sha256=wrong",
+    );
     expect(valid).toBe(false);
   });
 
@@ -21,10 +25,20 @@ describe("verifyWebhookSignature", () => {
       false,
       ["sign"],
     );
-    const sig = await crypto.subtle.sign("HMAC", key, encoder.encode("test-payload"));
-    const hex = [...new Uint8Array(sig)].map(b => b.toString(16).padStart(2, "0")).join("");
+    const sig = await crypto.subtle.sign(
+      "HMAC",
+      key,
+      encoder.encode("test-payload"),
+    );
+    const hex = [...new Uint8Array(sig)]
+      .map((b) => b.toString(16).padStart(2, "0"))
+      .join("");
 
-    const valid = await verifyWebhookSignature("test-secret", "test-payload", `sha256=${hex}`);
+    const valid = await verifyWebhookSignature(
+      "test-secret",
+      "test-payload",
+      `sha256=${hex}`,
+    );
     expect(valid).toBe(true);
   });
 });

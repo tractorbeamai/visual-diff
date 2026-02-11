@@ -4,7 +4,7 @@
   // so we only include bindings that miniflare supports (R2, Queues).
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "visual-diff",
-  "main": "src/index.ts",
+  "main": "src/worker/index.ts",
   "compatibility_date": "2025-05-06",
   "compatibility_flags": ["nodejs_compat"],
   "r2_buckets": [
