@@ -151,14 +151,21 @@ function PRViewer() {
               </h1>
               <div className="mt-0.5 flex items-center gap-3 text-xs text-muted-foreground/60">
                 {latestCommit && (
-                  <a
-                    href={`https://github.com/${owner}/${repo}/commit/${latestCommit}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="font-mono hover:text-foreground"
-                  >
-                    {latestCommit.slice(0, 7)}
-                  </a>
+                  <Tooltip>
+                    <TooltipTrigger
+                      render={
+                        <a
+                          href={`https://github.com/${owner}/${repo}/commit/${latestCommit}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="font-mono hover:text-foreground"
+                        />
+                      }
+                    >
+                      {latestCommit.slice(0, 7)}
+                    </TooltipTrigger>
+                    <TooltipContent>{latestCommit}</TooltipContent>
+                  </Tooltip>
                 )}
                 {activeRuns.length > 0 && (
                   <span className="text-amber-400">
@@ -166,10 +173,13 @@ function PRViewer() {
                   </span>
                 )}
                 {sandboxId && (
-                  <span>
-                    viewing{" "}
-                    <span className="font-mono">{sandboxId.slice(0, 8)}</span>
-                  </span>
+                  <Tooltip>
+                    <TooltipTrigger className="cursor-default">
+                      viewing{" "}
+                      <span className="font-mono">{sandboxId.slice(0, 8)}</span>
+                    </TooltipTrigger>
+                    <TooltipContent>{sandboxId}</TooltipContent>
+                  </Tooltip>
                 )}
               </div>
             </div>
@@ -213,12 +223,12 @@ function PRViewer() {
         killingAll={killAll.isPending}
       />
 
-      <div
-        ref={timelineRef}
+      <ScrollArea
+        viewportRef={timelineRef}
         onScroll={handleTimelineScroll}
-        className="min-h-0 flex-1 overflow-y-auto px-6 py-6"
+        className="min-h-0 flex-1"
       >
-        <div className="mx-auto max-w-3xl space-y-4">
+        <div className="mx-auto max-w-3xl space-y-4 px-6 py-6">
           {lines.length === 0 && agentMessages.length === 0 && (
             <div className="py-12 text-center text-sm text-muted-foreground">
               Click &ldquo;New run&rdquo; to begin.
@@ -266,7 +276,7 @@ function PRViewer() {
             </div>
           )}
         </div>
-      </div>
+      </ScrollArea>
     </div>
   );
 }
@@ -546,29 +556,6 @@ function RunStatusIcon({ status }: { status: Run["status"] }) {
   }
 }
 
-const statusConfig: Record<
-  Run["status"],
-  {
-    label: string;
-    variant: "secondary" | "outline" | "default" | "destructive";
-  }
-> = {
-  queued: { label: "Queued", variant: "secondary" },
-  running: { label: "Running", variant: "outline" },
-  completed: { label: "Completed", variant: "default" },
-  failed: { label: "Failed", variant: "destructive" },
-  cancelled: { label: "Cancelled", variant: "secondary" },
-};
-
-function StatusBadge({ status }: { status: Run["status"] }) {
-  const { label, variant } = statusConfig[status];
-  return (
-    <Badge variant={variant} className="text-xs">
-      {label}
-    </Badge>
-  );
-}
-
 function timeAgo(dateStr: string): string {
   const seconds = Math.floor(
     (Date.now() - new Date(dateStr + "Z").getTime()) / 1000,
@@ -661,17 +648,20 @@ function RunsPanel({
             >
               <RunStatusIcon status={run.status} />
               <div className="flex flex-col gap-0.5">
-                <div className="flex items-center gap-1.5">
-                  <span className="font-mono font-medium text-foreground">
+                <Tooltip>
+                  <TooltipTrigger className="font-mono font-medium text-foreground">
                     {run.commit_sha.slice(0, 7)}
-                  </span>
-                  <StatusBadge status={run.status} />
-                </div>
+                  </TooltipTrigger>
+                  <TooltipContent>{run.commit_sha}</TooltipContent>
+                </Tooltip>
                 <div className="flex items-center gap-2 text-[11px] text-muted-foreground/60">
-                  <span className="flex items-center gap-1">
-                    <IconBox size={10} />
-                    {run.id.slice(0, 8)}
-                  </span>
+                  <Tooltip>
+                    <TooltipTrigger className="flex items-center gap-1">
+                      <IconBox size={10} />
+                      {run.id.slice(0, 8)}
+                    </TooltipTrigger>
+                    <TooltipContent>{run.id}</TooltipContent>
+                  </Tooltip>
                   <span>{timeAgo(run.created_at)}</span>
                 </div>
               </div>
@@ -706,7 +696,7 @@ function RunsPanel({
 // ---------------------------------------------------------------------------
 
 function ToolPartView({ part }: { part: SdkToolPart }) {
-  const [expanded, setExpanded] = useState(false);
+  const [open, setOpen] = useState(false);
   const name = part.tool;
   const { state } = part;
   const status = state.status;
@@ -732,7 +722,9 @@ function ToolPartView({ part }: { part: SdkToolPart }) {
   const hasDetails = hasInput || hasOutput || hasError;
 
   return (
-    <div
+    <Collapsible
+      open={open}
+      onOpenChange={hasDetails ? setOpen : undefined}
       className={cn(
         "border text-xs transition-colors",
         status === "error"
@@ -740,8 +732,8 @@ function ToolPartView({ part }: { part: SdkToolPart }) {
           : "border-border bg-card",
       )}
     >
-      <button
-        onClick={() => hasDetails && setExpanded((v) => !v)}
+      <CollapsibleTrigger
+        disabled={!hasDetails}
         className={cn(
           "flex w-full items-center gap-2 px-3 py-2 text-left",
           hasDetails ? "cursor-pointer hover:bg-muted/30" : "cursor-default",
@@ -751,7 +743,7 @@ function ToolPartView({ part }: { part: SdkToolPart }) {
           <span
             className={cn(
               "text-[10px] text-muted-foreground/40 transition-transform",
-              expanded && "rotate-90",
+              open && "rotate-90",
             )}
           >
             &#9654;
@@ -767,8 +759,8 @@ function ToolPartView({ part }: { part: SdkToolPart }) {
         >
           {status}
         </Badge>
-      </button>
-      {expanded && (
+      </CollapsibleTrigger>
+      <CollapsibleContent>
         <div className="space-y-2 border-t border-border px-3 py-2">
           {hasInput && (
             <div>
@@ -801,7 +793,7 @@ function ToolPartView({ part }: { part: SdkToolPart }) {
             </div>
           )}
         </div>
-      )}
-    </div>
+      </CollapsibleContent>
+    </Collapsible>
   );
 }
