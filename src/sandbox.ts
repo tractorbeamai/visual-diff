@@ -1,16 +1,13 @@
 import { getSandbox, collectFile } from "@cloudflare/sandbox";
-import type { Env, QueueMessage, ScreenshotManifest, UploadedScreenshot } from "./types";
+import type {
+  Env,
+  QueueMessage,
+  ScreenshotManifest,
+  UploadedScreenshot,
+} from "./types";
 import { AGENT_RUNNER_SCRIPT } from "./agent";
-import {
-  buildR2Key,
-  uploadScreenshot,
-  buildCommentMarkdown,
-} from "./storage";
-import {
-  createOctokit,
-  getInstallationToken,
-  postPRComment,
-} from "./github";
+import { buildR2Key, uploadScreenshot, buildCommentMarkdown } from "./storage";
+import { createOctokit, getInstallationToken, postPRComment } from "./github";
 
 /**
  * Process a screenshot job: spin up sandbox, run agent, upload screenshots, post comment.
@@ -30,12 +27,19 @@ export async function processScreenshotJob(
       `https://x-access-token:${token}@github.com/${job.owner}/${job.repo}.git`,
       { targetDir: "repo" },
     );
-    await sandbox.exec(`git checkout ${job.commitSha}`, { cwd: "/workspace/repo" });
+    await sandbox.exec(`git checkout ${job.commitSha}`, {
+      cwd: "/workspace/repo",
+    });
+
+    // Resolve the Anthropic gateway URL via AI binding
+    const anthropicBaseUrl = await env.AI.gateway(env.AI_GATEWAY_ID).getUrl(
+      "anthropic",
+    );
 
     // Set environment variables for the agent (AI Gateway routing + config)
     await sandbox.setEnvVars({
       ANTHROPIC_API_KEY: env.ANTHROPIC_API_KEY,
-      ANTHROPIC_BASE_URL: env.ANTHROPIC_BASE_URL,
+      ANTHROPIC_BASE_URL: anthropicBaseUrl,
     });
 
     // Write PR context files for the agent to read
@@ -57,9 +61,9 @@ export async function processScreenshotJob(
 
     // Pass agent config as environment variables (read by the pre-built runner)
     await sandbox.setEnvVars({
-      VD_CDP_URL: `wss://vd.tractorbeam.ai/cdp?secret=${env.CDP_SECRET}`,
+      VD_CDP_URL: `wss://vd.tractorbeam.ai/cdp?secret=${env.INTERNAL_SECRET}`,
       VD_PREVIEW_URL: exposed.url,
-      VD_SCREENSHOT_SECRET: env.SCREENSHOT_SECRET,
+      VD_INTERNAL_SECRET: env.INTERNAL_SECRET,
     });
 
     // Write the pre-built agent runner script and execute it
@@ -73,11 +77,15 @@ export async function processScreenshotJob(
 
     if (!result.success) {
       console.error("Agent failed:", result.stderr);
-      throw new Error(`Agent exited with code ${result.exitCode}: ${result.stderr.slice(0, 500)}`);
+      throw new Error(
+        `Agent exited with code ${result.exitCode}: ${result.stderr.slice(0, 500)}`,
+      );
     }
 
     // Read the screenshot manifest the agent produced
-    const manifestResult = await sandbox.readFile("/workspace/screenshot-manifest.json");
+    const manifestResult = await sandbox.readFile(
+      "/workspace/screenshot-manifest.json",
+    );
     const manifest: ScreenshotManifest = JSON.parse(manifestResult.content);
 
     if (manifest.screenshots.length === 0) {
@@ -100,9 +108,10 @@ export async function processScreenshotJob(
       const { content } = await collectFile(stream);
 
       // content is Uint8Array for binary files
-      const data = content instanceof Uint8Array
-        ? content
-        : new TextEncoder().encode(content);
+      const data =
+        content instanceof Uint8Array
+          ? content
+          : new TextEncoder().encode(content);
 
       const key = buildR2Key(job.owner, job.repo, job.prNumber, entry.route);
       const url = await uploadScreenshot(env, key, data);
@@ -117,7 +126,13 @@ export async function processScreenshotJob(
     // Post the PR comment with screenshot images
     const octokit = createOctokit(env, job.installationId);
     const commentBody = buildCommentMarkdown(job.commitSha, uploaded);
-    await postPRComment(octokit, job.owner, job.repo, job.prNumber, commentBody);
+    await postPRComment(
+      octokit,
+      job.owner,
+      job.repo,
+      job.prNumber,
+      commentBody,
+    );
 
     console.log(`Posted ${uploaded.length} screenshots to PR #${job.prNumber}`);
   } finally {

@@ -1,11 +1,15 @@
-import { query, createSdkMcpServer, tool } from "@anthropic-ai/claude-agent-sdk";
+import {
+  query,
+  createSdkMcpServer,
+  tool,
+} from "@anthropic-ai/claude-agent-sdk";
 import { z } from "zod";
 import * as fs from "fs";
 import { buildSystemPrompt } from "./prompt";
 
 const cdpUrl = process.env.VD_CDP_URL!;
 const previewUrl = process.env.VD_PREVIEW_URL!;
-const screenshotSecret = process.env.VD_SCREENSHOT_SECRET!;
+const screenshotSecret = process.env.VD_INTERNAL_SECRET!;
 
 const screenshotTool = createSdkMcpServer({
   name: "visual-diff",
@@ -17,9 +21,17 @@ const screenshotTool = createSdkMcpServer({
       {
         screenshots: z.array(
           z.object({
-            path: z.string().describe("Absolute path to the screenshot PNG file"),
-            route: z.string().describe("The app route that was screenshotted (e.g. /dashboard)"),
-            description: z.string().describe("Brief description of what this screenshot shows"),
+            path: z
+              .string()
+              .describe("Absolute path to the screenshot PNG file"),
+            route: z
+              .string()
+              .describe(
+                "The app route that was screenshotted (e.g. /dashboard)",
+              ),
+            description: z
+              .string()
+              .describe("Brief description of what this screenshot shows"),
           }),
         ),
       },
@@ -41,7 +53,11 @@ const screenshotTool = createSdkMcpServer({
   ],
 });
 
-const systemPrompt = buildSystemPrompt({ cdpUrl, previewUrl, screenshotSecret });
+const systemPrompt = buildSystemPrompt({
+  cdpUrl,
+  previewUrl,
+  screenshotSecret,
+});
 
 async function main() {
   fs.mkdirSync("/workspace/screenshots", { recursive: true });

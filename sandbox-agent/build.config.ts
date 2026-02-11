@@ -3,7 +3,7 @@ import { defineConfig } from "rolldown";
 export default defineConfig({
   input: "./sandbox-agent/runner.ts",
   output: {
-    file: "dist/runner.mjs",
+    file: "dist/runner.txt",
     format: "esm",
   },
   platform: "node",

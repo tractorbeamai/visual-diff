@@ -18,7 +18,11 @@ import type { Env, QueueMessage } from "./types";
 // ─── Main Worker ─────────────────────────────────────────────────────────────
 
 export default {
-  async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
+  async fetch(
+    request: Request,
+    env: Env,
+    ctx: ExecutionContext,
+  ): Promise<Response> {
     const url = new URL(request.url);
 
     // CDP WebSocket + discovery endpoints
@@ -30,7 +34,7 @@ export default {
     // must include the X-Screenshot-Auth header.
     if (isPreviewRequest(url)) {
       const authHeader = request.headers.get("X-Screenshot-Auth");
-      if (authHeader !== env.SCREENSHOT_SECRET) {
+      if (authHeader !== env.INTERNAL_SECRET) {
         return new Response("Forbidden", { status: 403 });
       }
     }
@@ -81,7 +85,11 @@ async function handleWebhook(
 
   // Verify webhook signature
   const signature = request.headers.get("X-Hub-Signature-256") ?? "";
-  const valid = await verifyWebhookSignature(env.GITHUB_WEBHOOK_SECRET, body, signature);
+  const valid = await verifyWebhookSignature(
+    env.GITHUB_WEBHOOK_SECRET,
+    body,
+    signature,
+  );
   if (!valid) {
     return new Response("Invalid signature", { status: 401 });
   }
@@ -146,7 +154,7 @@ async function handleWebhook(
 async function handleTrigger(request: Request, env: Env): Promise<Response> {
   // Verify bearer token
   const authHeader = request.headers.get("Authorization");
-  if (!authHeader || authHeader !== `Bearer ${env.TRIGGER_SECRET}`) {
+  if (!authHeader || authHeader !== `Bearer ${env.INTERNAL_SECRET}`) {
     return Response.json({ error: "Unauthorized" }, { status: 401 });
   }
 
@@ -165,7 +173,10 @@ async function handleTrigger(request: Request, env: Env): Promise<Response> {
     const parsed = parsePRUrl(body.url);
     if (!parsed) {
       return Response.json(
-        { error: "Invalid PR URL. Expected: https://github.com/{owner}/{repo}/pull/{number}" },
+        {
+          error:
+            "Invalid PR URL. Expected: https://github.com/{owner}/{repo}/pull/{number}",
+        },
         { status: 400 },
       );
     }
@@ -200,7 +211,10 @@ async function handleTrigger(request: Request, env: Env): Promise<Response> {
   );
   await env.SCREENSHOT_QUEUE.send(message);
 
-  return Response.json({ status: "accepted", pr: `${owner}/${repo}#${prNumber}` }, { status: 202 });
+  return Response.json(
+    { status: "accepted", pr: `${owner}/${repo}#${prNumber}` },
+    { status: 202 },
+  );
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -237,7 +251,14 @@ async function buildQueueMessage(
   const installationId = payload.installation.id;
   const commitSha = pr.merge_commit_sha ?? pr.head.sha;
 
-  return buildQueueMessageFromPR(env, owner, repo, pr.number, commitSha, installationId);
+  return buildQueueMessageFromPR(
+    env,
+    owner,
+    repo,
+    pr.number,
+    commitSha,
+    installationId,
+  );
 }
 
 async function buildQueueMessageFromPR(

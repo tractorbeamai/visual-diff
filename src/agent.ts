@@ -4,7 +4,6 @@
  *
  * Build with: pnpm run build:agent
  */
-// @ts-expect-error -- text import handled by Wrangler's bundler
-import agentBundle from "../dist/runner.mjs" with { type: "text" };
+import agentBundle from "../dist/runner.txt";
 
 export const AGENT_RUNNER_SCRIPT: string = agentBundle;

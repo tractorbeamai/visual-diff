@@ -18,7 +18,11 @@
  * - Emulation: setDeviceMetricsOverride, clearDeviceMetricsOverride, setUserAgentOverride
  * - Fetch: enable, disable, continueRequest, fulfillRequest, failRequest
  */
-import puppeteer, { type Browser, type Page, type KeyInput } from "@cloudflare/puppeteer";
+import puppeteer, {
+  type Browser,
+  type Page,
+  type KeyInput,
+} from "@cloudflare/puppeteer";
 import type { Env } from "./types";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -43,20 +47,14 @@ interface CDPSession {
 
 // ─── Public handler ──────────────────────────────────────────────────────────
 
-export async function handleCDP(
-  request: Request,
-  env: Env,
-): Promise<Response> {
+export async function handleCDP(request: Request, env: Env): Promise<Response> {
   const url = new URL(request.url);
 
   // Discovery endpoints
   if (url.pathname === "/cdp/json/version") {
     return handleJsonVersion(url, env);
   }
-  if (
-    url.pathname === "/cdp/json/list" ||
-    url.pathname === "/cdp/json"
-  ) {
+  if (url.pathname === "/cdp/json/list" || url.pathname === "/cdp/json") {
     return handleJsonList(url, env);
   }
 
@@ -64,7 +62,10 @@ export async function handleCDP(
   const upgradeHeader = request.headers.get("Upgrade");
   if (upgradeHeader?.toLowerCase() !== "websocket") {
     return Response.json(
-      { error: "WebSocket upgrade required", hint: "Connect via ws://host/cdp?secret=<secret>" },
+      {
+        error: "WebSocket upgrade required",
+        hint: "Connect via ws://host/cdp?secret=<secret>",
+      },
       { status: 426 },
     );
   }
@@ -145,7 +146,13 @@ async function initCDPSession(ws: WebSocket, env: Env): Promise<void> {
     };
 
     sendEvent(ws, "Target.targetCreated", {
-      targetInfo: { targetId, type: "page", title: "", url: "about:blank", attached: true },
+      targetInfo: {
+        targetId,
+        type: "page",
+        title: "",
+        url: "about:blank",
+        attached: true,
+      },
     });
 
     console.log("[CDP] Session initialized, targetId:", targetId);
@@ -166,18 +173,32 @@ async function initCDPSession(ws: WebSocket, env: Env): Promise<void> {
     }
 
     try {
-      const result = await handleCDPMethod(session, request.method, request.params ?? {}, ws);
+      const result = await handleCDPMethod(
+        session,
+        request.method,
+        request.params ?? {},
+        ws,
+      );
       sendResponse(ws, request.id, result);
     } catch (err) {
       console.error("[CDP] Method error:", request.method, err);
-      sendError(ws, request.id, -32000, err instanceof Error ? err.message : "Unknown error");
+      sendError(
+        ws,
+        request.id,
+        -32000,
+        err instanceof Error ? err.message : "Unknown error",
+      );
     }
   });
 
   ws.addEventListener("close", async () => {
     console.log("[CDP] WebSocket closed, cleaning up");
     if (session) {
-      try { await session.browser.close(); } catch { /* noop */ }
+      try {
+        await session.browser.close();
+      } catch {
+        /* noop */
+      }
     }
   });
 
@@ -230,7 +251,10 @@ async function handleCDPMethod(
 
 // ─── Browser domain ──────────────────────────────────────────────────────────
 
-async function handleBrowser(session: CDPSession, command: string): Promise<unknown> {
+async function handleBrowser(
+  session: CDPSession,
+  command: string,
+): Promise<unknown> {
   switch (command) {
     case "getVersion":
       return {
@@ -365,7 +389,9 @@ async function handlePage(
     case "captureScreenshot": {
       const format = (params.format as string) || "png";
       const quality = params.quality as number | undefined;
-      const clip = params.clip as { x: number; y: number; width: number; height: number } | undefined;
+      const clip = params.clip as
+        | { x: number; y: number; width: number; height: number }
+        | undefined;
 
       const data = await page.screenshot({
         type: format as "png" | "jpeg" | "webp",
@@ -386,9 +412,27 @@ async function handlePage(
         clientHeight: document.documentElement.clientHeight,
       }));
       return {
-        layoutViewport: { pageX: 0, pageY: 0, clientWidth: metrics.clientWidth, clientHeight: metrics.clientHeight },
-        visualViewport: { offsetX: 0, offsetY: 0, pageX: 0, pageY: 0, clientWidth: metrics.clientWidth, clientHeight: metrics.clientHeight, scale: 1 },
-        contentSize: { x: 0, y: 0, width: metrics.width, height: metrics.height },
+        layoutViewport: {
+          pageX: 0,
+          pageY: 0,
+          clientWidth: metrics.clientWidth,
+          clientHeight: metrics.clientHeight,
+        },
+        visualViewport: {
+          offsetX: 0,
+          offsetY: 0,
+          pageX: 0,
+          pageY: 0,
+          clientWidth: metrics.clientWidth,
+          clientHeight: metrics.clientHeight,
+          scale: 1,
+        },
+        contentSize: {
+          x: 0,
+          y: 0,
+          width: metrics.width,
+          height: metrics.height,
+        },
       };
     }
 
@@ -400,7 +444,12 @@ async function handlePage(
       const html = params.html as string;
       if (!html) throw new Error("html is required");
       await page.setContent(html, {
-        waitUntil: (params.waitUntil as "load" | "domcontentloaded" | "networkidle0" | "networkidle2") || "load",
+        waitUntil:
+          (params.waitUntil as
+            | "load"
+            | "domcontentloaded"
+            | "networkidle0"
+            | "networkidle2") || "load",
       });
       return {};
     }
@@ -415,7 +464,9 @@ async function handlePage(
     }
 
     case "removeScriptToEvaluateOnNewDocument": {
-      session.scriptsToEvaluateOnNewDocument.delete(params.identifier as string);
+      session.scriptsToEvaluateOnNewDocument.delete(
+        params.identifier as string,
+      );
       return {};
     }
 
@@ -426,19 +477,24 @@ async function handlePage(
     case "getNavigationHistory": {
       return page.evaluate(() => ({
         currentIndex: window.history.length - 1,
-        entries: [{
-          id: 0,
-          url: window.location.href,
-          userTypedURL: window.location.href,
-          title: document.title,
-          transitionType: "typed",
-        }],
+        entries: [
+          {
+            id: 0,
+            url: window.location.href,
+            userTypedURL: window.location.href,
+            title: document.title,
+            transitionType: "typed",
+          },
+        ],
       }));
     }
 
     case "navigateToHistoryEntry": {
       const entryId = params.entryId as number;
-      await page.evaluate((id: number) => window.history.go(id - (window.history.length - 1)), entryId);
+      await page.evaluate(
+        (id: number) => window.history.go(id - (window.history.length - 1)),
+        entryId,
+      );
       return {};
     }
 
@@ -481,7 +537,9 @@ async function handleRuntime(
       const awaitPromise = (params.awaitPromise as boolean) ?? false;
 
       try {
-        const wrapped = awaitPromise ? `(async () => { return ${expression}; })()` : expression;
+        const wrapped = awaitPromise
+          ? `(async () => { return ${expression}; })()`
+          : expression;
         const result = await page.evaluate(wrapped);
 
         let objectId: string | undefined;
@@ -493,7 +551,11 @@ async function handleRuntime(
         return {
           result: {
             type: typeof result,
-            subtype: Array.isArray(result) ? "array" : result === null ? "null" : undefined,
+            subtype: Array.isArray(result)
+              ? "array"
+              : result === null
+                ? "null"
+                : undefined,
             className: result?.constructor?.name,
             value: returnByValue ? result : undefined,
             objectId,
@@ -514,12 +576,18 @@ async function handleRuntime(
 
     case "callFunctionOn": {
       const functionDeclaration = params.functionDeclaration as string;
-      const args = (params.arguments as Array<{ value?: unknown; objectId?: string }>) || [];
+      const args =
+        (params.arguments as Array<{ value?: unknown; objectId?: string }>) ||
+        [];
       const returnByValue = (params.returnByValue as boolean) ?? true;
 
       try {
-        const argValues = args.map((a) => (a.objectId ? session.objectMap.get(a.objectId) : a.value));
-        const fn = new Function(`return (${functionDeclaration}).apply(this, arguments)`);
+        const argValues = args.map((a) =>
+          a.objectId ? session.objectMap.get(a.objectId) : a.value,
+        );
+        const fn = new Function(
+          `return (${functionDeclaration}).apply(this, arguments)`,
+        );
         const result = await page.evaluate(fn as () => unknown, ...argValues);
 
         let objectId: string | undefined;
@@ -531,7 +599,11 @@ async function handleRuntime(
         return {
           result: {
             type: typeof result,
-            subtype: Array.isArray(result) ? "array" : result === null ? "null" : undefined,
+            subtype: Array.isArray(result)
+              ? "array"
+              : result === null
+                ? "null"
+                : undefined,
             value: returnByValue ? result : undefined,
             objectId,
           },
@@ -553,9 +625,10 @@ async function handleRuntime(
       if (!obj || typeof obj !== "object") return { result: [] };
 
       const properties: unknown[] = [];
-      const keys = (params.ownProperties as boolean) ?? true
-        ? Object.getOwnPropertyNames(obj)
-        : Object.keys(obj as Record<string, unknown>);
+      const keys =
+        ((params.ownProperties as boolean) ?? true)
+          ? Object.getOwnPropertyNames(obj)
+          : Object.keys(obj as Record<string, unknown>);
 
       for (const key of keys) {
         const value = (obj as Record<string, unknown>)[key];
@@ -727,34 +800,67 @@ async function handleDOM(
         const scrollX = window.scrollX;
         const scrollY = window.scrollY;
         const style = window.getComputedStyle(el);
-        const pT = parseFloat(style.paddingTop), pR = parseFloat(style.paddingRight),
-              pB = parseFloat(style.paddingBottom), pL = parseFloat(style.paddingLeft);
-        const bT = parseFloat(style.borderTopWidth), bR = parseFloat(style.borderRightWidth),
-              bB = parseFloat(style.borderBottomWidth), bL = parseFloat(style.borderLeftWidth);
-        const mT = parseFloat(style.marginTop), mR = parseFloat(style.marginRight),
-              mB = parseFloat(style.marginBottom), mL = parseFloat(style.marginLeft);
+        const pT = parseFloat(style.paddingTop),
+          pR = parseFloat(style.paddingRight),
+          pB = parseFloat(style.paddingBottom),
+          pL = parseFloat(style.paddingLeft);
+        const bT = parseFloat(style.borderTopWidth),
+          bR = parseFloat(style.borderRightWidth),
+          bB = parseFloat(style.borderBottomWidth),
+          bL = parseFloat(style.borderLeftWidth);
+        const mT = parseFloat(style.marginTop),
+          mR = parseFloat(style.marginRight),
+          mB = parseFloat(style.marginBottom),
+          mL = parseFloat(style.marginLeft);
 
-        const toQuad = (b: { x: number; y: number; width: number; height: number }) =>
-          [b.x, b.y, b.x + b.width, b.y, b.x + b.width, b.y + b.height, b.x, b.y + b.height];
+        const toQuad = (b: {
+          x: number;
+          y: number;
+          width: number;
+          height: number;
+        }) => [
+          b.x,
+          b.y,
+          b.x + b.width,
+          b.y,
+          b.x + b.width,
+          b.y + b.height,
+          b.x,
+          b.y + b.height,
+        ];
 
         const content = {
-          x: rect.left + scrollX + bL + pL, y: rect.top + scrollY + bT + pT,
-          width: rect.width - bL - bR - pL - pR, height: rect.height - bT - bB - pT - pB,
+          x: rect.left + scrollX + bL + pL,
+          y: rect.top + scrollY + bT + pT,
+          width: rect.width - bL - bR - pL - pR,
+          height: rect.height - bT - bB - pT - pB,
         };
         const padding = {
-          x: rect.left + scrollX + bL, y: rect.top + scrollY + bT,
-          width: rect.width - bL - bR, height: rect.height - bT - bB,
+          x: rect.left + scrollX + bL,
+          y: rect.top + scrollY + bT,
+          width: rect.width - bL - bR,
+          height: rect.height - bT - bB,
         };
-        const border = { x: rect.left + scrollX, y: rect.top + scrollY, width: rect.width, height: rect.height };
+        const border = {
+          x: rect.left + scrollX,
+          y: rect.top + scrollY,
+          width: rect.width,
+          height: rect.height,
+        };
         const margin = {
-          x: rect.left + scrollX - mL, y: rect.top + scrollY - mT,
-          width: rect.width + mL + mR, height: rect.height + mT + mB,
+          x: rect.left + scrollX - mL,
+          y: rect.top + scrollY - mT,
+          width: rect.width + mL + mR,
+          height: rect.height + mT + mB,
         };
 
         return {
-          content: toQuad(content), padding: toQuad(padding),
-          border: toQuad(border), margin: toQuad(margin),
-          width: Math.round(rect.width), height: Math.round(rect.height),
+          content: toQuad(content),
+          padding: toQuad(padding),
+          border: toQuad(border),
+          margin: toQuad(margin),
+          width: Math.round(rect.width),
+          height: Math.round(rect.height),
         };
       }, selector);
       if (!box) throw new Error("Could not compute box model");
@@ -765,7 +871,9 @@ async function handleDOM(
       const selector = session.nodeMap.get(params.nodeId as number);
       if (!selector) throw new Error(`Node not found: ${params.nodeId}`);
       await page.evaluate((sel: string) => {
-        document.querySelector(sel)?.scrollIntoView({ block: "center", inline: "center" });
+        document
+          .querySelector(sel)
+          ?.scrollIntoView({ block: "center", inline: "center" });
       }, selector);
       return {};
     }
@@ -773,7 +881,10 @@ async function handleDOM(
     case "removeNode": {
       const selector = session.nodeMap.get(params.nodeId as number);
       if (!selector) throw new Error(`Node not found: ${params.nodeId}`);
-      await page.evaluate((sel: string) => document.querySelector(sel)?.remove(), selector);
+      await page.evaluate(
+        (sel: string) => document.querySelector(sel)?.remove(),
+        selector,
+      );
       return {};
     }
 
@@ -797,7 +908,11 @@ async function handleDOM(
       const element = await page.$(selector);
       if (!element) throw new Error("Element not found");
       const files = params.files as string[];
-      await (element as unknown as { uploadFile: (...paths: string[]) => Promise<void> }).uploadFile(...files);
+      await (
+        element as unknown as {
+          uploadFile: (...paths: string[]) => Promise<void>;
+        }
+      ).uploadFile(...files);
       return {};
     }
 
@@ -821,7 +936,8 @@ async function handleInput(
       const button = (params.button as string) || "left";
       const clickCount = (params.clickCount as number) || 1;
 
-      const puppeteerButton = button === "right" ? "right" : button === "middle" ? "middle" : "left";
+      const puppeteerButton =
+        button === "right" ? "right" : button === "middle" ? "middle" : "left";
 
       switch (type) {
         case "mousePressed":
@@ -841,7 +957,10 @@ async function handleInput(
           break;
         default:
           if (clickCount === 2) {
-            await page.mouse.click(x, y, { button: puppeteerButton, clickCount: 2 });
+            await page.mouse.click(x, y, {
+              button: puppeteerButton,
+              clickCount: 2,
+            });
           } else {
             await page.mouse.click(x, y, { button: puppeteerButton });
           }
@@ -858,7 +977,7 @@ async function handleInput(
       } else if (type === "keyUp") {
         await page.keyboard.up(key as KeyInput);
       } else if (type === "char") {
-        await page.keyboard.sendCharacter(params.text as string || key);
+        await page.keyboard.sendCharacter((params.text as string) || key);
       }
       return {};
     }
@@ -896,7 +1015,9 @@ async function handleNetwork(
           session.extraHTTPHeaders.set(k, v);
         }
         if (page) {
-          await page.setExtraHTTPHeaders(Object.fromEntries(session.extraHTTPHeaders));
+          await page.setExtraHTTPHeaders(
+            Object.fromEntries(session.extraHTTPHeaders),
+          );
         }
       }
       return {};
@@ -905,9 +1026,10 @@ async function handleNetwork(
     case "setCookie":
     case "setCookies": {
       if (!page) return {};
-      const cookies = command === "setCookies"
-        ? (params.cookies as Array<Record<string, unknown>>)
-        : [params];
+      const cookies =
+        command === "setCookies"
+          ? (params.cookies as Array<Record<string, unknown>>)
+          : [params];
       for (const c of cookies) {
         await page.setCookie({
           name: c.name as string,
@@ -1043,7 +1165,12 @@ function sendResponse(ws: WebSocket, id: number, result: unknown): void {
   ws.send(JSON.stringify({ id, result }));
 }
 
-function sendError(ws: WebSocket, id: number, code: number, message: string): void {
+function sendError(
+  ws: WebSocket,
+  id: number,
+  code: number,
+  message: string,
+): void {
   ws.send(JSON.stringify({ id, error: { code, message } }));
 }
 
@@ -1053,8 +1180,8 @@ function sendEvent(ws: WebSocket, method: string, params: unknown): void {
 
 function verifySecret(url: URL, env: Env): boolean {
   const provided = url.searchParams.get("secret");
-  if (!provided || !env.CDP_SECRET) return false;
-  return timingSafeEqual(provided, env.CDP_SECRET);
+  if (!provided || !env.INTERNAL_SECRET) return false;
+  return timingSafeEqual(provided, env.INTERNAL_SECRET);
 }
 
 function timingSafeEqual(a: string, b: string): boolean {

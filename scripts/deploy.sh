@@ -27,21 +27,17 @@ set -euo pipefail
 # 4. Cloudflare Queue
 #    - Created automatically on first deploy via wrangler.jsonc
 #
-# 5. AI Gateway (optional but recommended)
-#    - Create gateway in Cloudflare dashboard
-#    - Enable Anthropic provider
-#    - Add API key or enable Unified Billing
-#    - Use gateway URL as ANTHROPIC_BASE_URL
+# 5. AI Gateway
+#    - Create gateway named "visual-diff" in Cloudflare dashboard
+#      (or change the AI_GATEWAY_ID var in wrangler.jsonc)
+#    - The Worker uses the AI binding to resolve the gateway URL at runtime
 #
 # 6. Secrets (run these before first deploy):
 #    wrangler secret put GITHUB_APP_ID
 #    wrangler secret put GITHUB_APP_PRIVATE_KEY
 #    wrangler secret put GITHUB_WEBHOOK_SECRET
 #    wrangler secret put ANTHROPIC_API_KEY
-#    wrangler secret put ANTHROPIC_BASE_URL
-#    wrangler secret put CDP_SECRET
-#    wrangler secret put SCREENSHOT_SECRET
-#    wrangler secret put TRIGGER_SECRET
+#    wrangler secret put INTERNAL_SECRET
 
 echo "Running pre-deploy checks..."
 

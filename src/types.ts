@@ -14,10 +14,7 @@ export interface Env extends Omit<Cloudflare.Env, "Sandbox"> {
   GITHUB_APP_PRIVATE_KEY: string;
   GITHUB_WEBHOOK_SECRET: string;
   ANTHROPIC_API_KEY: string;
-  ANTHROPIC_BASE_URL: string;
-  CDP_SECRET: string;
-  SCREENSHOT_SECRET: string;
-  TRIGGER_SECRET: string;
+  INTERNAL_SECRET: string;
 }
 
 /**
