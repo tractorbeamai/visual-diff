@@ -5,6 +5,7 @@ import {
   reactToComment,
 } from "../github";
 import { buildQueueMessage, buildQueueMessageFromPR } from "../queue";
+import { registerRun } from "../db";
 import type { Env } from "../types";
 
 const webhook = new Hono<{ Bindings: Env }>();
@@ -32,11 +33,20 @@ webhook.post("/", async (c) => {
     payload.pull_request?.merged === true
   ) {
     const sid = crypto.randomUUID();
-    const message = await buildQueueMessage(
-      c.env,
-      payload,
-      payload.pull_request,
-    );
+    const pr = payload.pull_request;
+    const owner = payload.repository.owner.login;
+    const repo = payload.repository.name;
+    const commitSha = pr.merge_commit_sha ?? pr.head.sha;
+
+    await registerRun(c.env, {
+      id: sid,
+      owner,
+      repo,
+      prNumber: pr.number,
+      commitSha,
+    });
+
+    const message = await buildQueueMessage(c.env, payload, pr);
     await c.env.SCREENSHOT_QUEUE.send({ ...message, sandboxId: sid });
     return c.text("Accepted", 202);
   }
@@ -65,6 +75,15 @@ webhook.post("/", async (c) => {
     });
 
     const sid = crypto.randomUUID();
+
+    await registerRun(c.env, {
+      id: sid,
+      owner,
+      repo,
+      prNumber,
+      commitSha: pr.data.head.sha,
+    });
+
     const message = await buildQueueMessageFromPR(
       c.env,
       owner,

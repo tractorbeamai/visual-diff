@@ -7,20 +7,24 @@
   "main": "src/worker/index.ts",
   "compatibility_date": "2025-05-06",
   "compatibility_flags": ["nodejs_compat"],
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "visual-diff-db",
+    },
+  ],
   "r2_buckets": [
     {
       "binding": "SCREENSHOTS",
-      "bucket_name": "visual-diff-screenshots"
-    }
+      "bucket_name": "visual-diff-screenshots",
+    },
   ],
   "queues": {
     "producers": [
-      { "binding": "SCREENSHOT_QUEUE", "queue": "visual-diff-jobs" }
+      { "binding": "SCREENSHOT_QUEUE", "queue": "visual-diff-jobs" },
     ],
-    "consumers": [
-      { "queue": "visual-diff-jobs", "max_retries": 2 }
-    ]
+    "consumers": [{ "queue": "visual-diff-jobs", "max_retries": 2 }],
   },
   // Secrets are provided via .dev.vars for test environment
-  "vars": {}
+  "vars": {},
 }

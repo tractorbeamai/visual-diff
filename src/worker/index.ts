@@ -8,6 +8,7 @@ import { webhook } from "./routes/webhook";
 import { start } from "./routes/start";
 import { stream } from "./routes/stream";
 import { messages } from "./routes/messages";
+import { runs } from "./routes/runs";
 import type { Env } from "./types";
 
 // ─── Hono App ─────────────────────────────────────────────────────────────────
@@ -48,9 +49,34 @@ app.route("/webhook", webhook);
 app.route("/start", start);
 app.route("/stream", stream);
 app.route("/messages", messages);
+app.route("/runs", runs);
 
 // Health check
 app.get("/health", (c) => c.json({ status: "ok", service: "visual-diff" }));
+
+// Admin: destroy all sandboxes (requires INTERNAL_SECRET)
+app.post("/admin/purge", async (c) => {
+  if (c.req.header("Authorization") !== `Bearer ${c.env.INTERNAL_SECRET}`) {
+    return c.text("Forbidden", 403);
+  }
+  const ns = c.env.Sandbox;
+  const ids: string[] = (await c.req.json()).ids ?? [];
+  const results: string[] = [];
+  for (const id of ids) {
+    try {
+      const stub = ns.get(ns.idFromString(id));
+      await stub.fetch(
+        new Request("https://sandbox/destroy", { method: "POST" }),
+      );
+      results.push(`${id.slice(0, 8)}: destroyed`);
+    } catch (e) {
+      results.push(
+        `${id.slice(0, 8)}: ${e instanceof Error ? e.message : String(e)}`,
+      );
+    }
+  }
+  return c.json({ results });
+});
 
 export default {
   fetch: app.fetch,

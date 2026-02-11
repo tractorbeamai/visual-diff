@@ -6,6 +6,7 @@ import {
   fetchChangedFiles,
 } from "./github";
 import { startScreenshotJob } from "./sandbox";
+import { isRunActive, updateRunStatus } from "./db";
 import type { Env, QueueMessage } from "./types";
 
 /**
@@ -19,12 +20,28 @@ export async function handleQueue(
   for (const msg of batch.messages) {
     const job = msg.body;
     try {
+      // Skip if this run was already cancelled (superseded by a newer run)
+      const active = await isRunActive(env.DB, job.sandboxId);
+      if (!active) {
+        console.log(`Run ${job.sandboxId.slice(0, 8)} was cancelled, skipping`);
+        msg.ack();
+        continue;
+      }
+
+      await updateRunStatus(env.DB, job.sandboxId, "running");
       const cleanup = await startScreenshotJob(job, env);
       msg.ack();
       ctx.waitUntil(cleanup());
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       console.error("Queue job failed during setup:", err);
+
+      // Mark the run as failed in D1
+      try {
+        await updateRunStatus(env.DB, job.sandboxId, "failed");
+      } catch {
+        // Best effort
+      }
 
       // Best-effort: write error to the sandbox log
       try {

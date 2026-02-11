@@ -6,6 +6,7 @@ import {
   lookupInstallationId,
 } from "../github";
 import { buildQueueMessageFromPR } from "../queue";
+import { registerRun } from "../db";
 import type { Env } from "../types";
 
 const start = new Hono<{ Bindings: Env }>();
@@ -52,6 +53,15 @@ start.post("/", async (c) => {
   const prDetails = await fetchPRDetails(octokit, owner, repo, prNumber);
 
   const sid = crypto.randomUUID();
+
+  const { cancelledRun } = await registerRun(c.env, {
+    id: sid,
+    owner,
+    repo,
+    prNumber,
+    commitSha: prDetails.headSha,
+  });
+
   const message = await buildQueueMessageFromPR(
     c.env,
     owner,
@@ -67,6 +77,7 @@ start.post("/", async (c) => {
       status: "accepted",
       pr: `${owner}/${repo}#${prNumber}`,
       sandboxId: sid,
+      cancelledRun: cancelledRun?.id ?? null,
     },
     202,
   );

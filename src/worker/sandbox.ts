@@ -13,6 +13,7 @@ import type {
 import { buildSystemPrompt } from "./prompt";
 import { buildR2Key, uploadScreenshot, buildCommentMarkdown } from "./storage";
 import { createOctokit, getInstallationToken, postPRComment } from "./github";
+import { isRunActive, updateRunStatus } from "./db";
 
 /**
  * Start a screenshot job: spin up sandbox, clone repo, start the OpenCode
@@ -229,6 +230,15 @@ export async function startScreenshotJob(
         await new Promise((r) => setTimeout(r, 3_000));
         pollCount++;
 
+        // Check if this run was cancelled (superseded by a newer run)
+        if (pollCount % 10 === 0) {
+          const stillActive = await isRunActive(env.DB, job.sandboxId);
+          if (!stillActive) {
+            await log("Run was cancelled (superseded by a newer run).");
+            return;
+          }
+        }
+
         // Check manifest every ~10 polls (30s)
         if (pollCount % 10 === 0) {
           const check = await sandbox.exec(
@@ -292,6 +302,7 @@ export async function startScreenshotJob(
 
       if (!manifestFound) {
         await log("ERROR: Agent timed out after 10 minutes.");
+        await updateRunStatus(env.DB, job.sandboxId, "failed");
         throw new Error(
           "Agent timed out after 10 minutes without producing a manifest",
         );
@@ -306,6 +317,7 @@ export async function startScreenshotJob(
 
       if (manifest.screenshots.length === 0) {
         await log("Agent produced no screenshots.");
+        await updateRunStatus(env.DB, job.sandboxId, "completed");
         const octokit = createOctokit(env, job.installationId);
         await postPRComment(
           octokit,
@@ -354,6 +366,7 @@ export async function startScreenshotJob(
         commentBody,
       );
 
+      await updateRunStatus(env.DB, job.sandboxId, "completed");
       await log(
         `Done! Posted ${uploaded.length} screenshots to PR #${job.prNumber}.`,
       );
@@ -362,6 +375,11 @@ export async function startScreenshotJob(
       );
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
+      try {
+        await updateRunStatus(env.DB, job.sandboxId, "failed");
+      } catch {
+        // Best effort
+      }
       try {
         await log(`ERROR: ${message}`);
       } catch {

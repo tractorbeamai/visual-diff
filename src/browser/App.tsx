@@ -6,6 +6,18 @@ import type {
   ToolPart as SdkToolPart,
   SessionStatus,
 } from "@opencode-ai/sdk";
+import {
+  IconPlayerPlay,
+  IconLoader2,
+  IconCircleCheck,
+  IconCircleX,
+  IconBan,
+  IconClock,
+  IconBox,
+  IconBrain,
+  IconGitPullRequest,
+  IconRefresh,
+} from "@tabler/icons-react";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -26,6 +38,17 @@ type ConnectionStatus =
 interface AgentMessage {
   info: Message;
   parts: Part[];
+}
+
+interface Run {
+  id: string;
+  owner: string;
+  repo: string;
+  pr_number: number;
+  commit_sha: string;
+  status: "queued" | "running" | "completed" | "cancelled" | "failed";
+  created_at: string;
+  updated_at: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -169,7 +192,7 @@ function PRViewer({
     };
 
     poll();
-    pollRef.current = setInterval(poll, 3_000);
+    pollRef.current = setInterval(poll, 500);
   }, []);
 
   const stopPolling = useCallback(() => {
@@ -295,13 +318,26 @@ function PRViewer({
           <button
             onClick={handleStart}
             disabled={starting}
-            className="rounded-md border border-blue-500 bg-blue-600 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-50"
+            className="flex items-center gap-1.5 rounded-md border border-blue-500 bg-blue-600 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-50"
           >
+            {starting ? (
+              <IconLoader2 size={14} className="animate-spin" />
+            ) : (
+              <IconPlayerPlay size={14} />
+            )}
             {starting ? "Starting..." : sandboxId ? "Restart run" : "Start run"}
           </button>
           <StatusBadge streamStatus={streamStatus} agentBusy={agentBusy} />
         </div>
       </header>
+
+      <RunsPanel
+        owner={owner}
+        repo={repo}
+        prNumber={prNumber}
+        activeSandboxId={sandboxId}
+        onSelectRun={connectToSandbox}
+      />
 
       <div className="grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)_minmax(0,2fr)] overflow-hidden">
         {/* Left: Setup logs */}
@@ -344,9 +380,9 @@ function PRViewer({
                 Waiting for agent to start...
               </div>
             )}
-          <div className="space-y-3">
+          <div className="space-y-1">
             {agentMessages.map((msg) => (
-              <MessageView key={msg.info.id} message={msg} />
+              <MessageParts key={msg.info.id} message={msg} />
             ))}
           </div>
 
@@ -449,45 +485,15 @@ function SetupLogEntry({ raw }: { raw: string }) {
 // Agent message rendering
 // ---------------------------------------------------------------------------
 
-function MessageView({ message }: { message: AgentMessage }) {
+function MessageParts({ message }: { message: AgentMessage }) {
   const { info, parts } = message;
   const isAssistant = info.role === "assistant";
 
   return (
-    <div className="rounded-md border border-gray-800 bg-gray-900/40">
-      <MessageHeader info={info} />
-      <div className="space-y-1 px-4 pb-3">
-        {parts.map((part, i) => (
-          <PartView key={i} part={part} isAssistant={isAssistant} />
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function MessageHeader({ info }: { info: Message }) {
-  const isAssistant = info.role === "assistant";
-  const tokens = isAssistant ? info.tokens : undefined;
-  const modelID = isAssistant ? info.modelID : undefined;
-  const tokenStr = tokens
-    ? `in:${tokens.input} out:${tokens.output} cache:${tokens.cache?.read ?? 0}`
-    : null;
-
-  return (
-    <div className="flex items-center gap-2 border-b border-gray-800/50 px-4 py-2">
-      <span
-        className={`text-xs font-semibold uppercase tracking-wide ${
-          isAssistant ? "text-blue-400" : "text-gray-400"
-        }`}
-      >
-        {info.role}
-      </span>
-      {modelID && <span className="text-xs text-gray-600">{modelID}</span>}
-      {tokenStr && (
-        <span className="ml-auto font-mono text-[11px] text-gray-600">
-          {tokenStr}
-        </span>
-      )}
+    <div className="space-y-1">
+      {parts.map((part, i) => (
+        <PartView key={i} part={part} isAssistant={isAssistant} />
+      ))}
     </div>
   );
 }
@@ -528,6 +534,168 @@ function TextPartView({
     </pre>
   );
 }
+
+// ---------------------------------------------------------------------------
+// Runs panel
+// ---------------------------------------------------------------------------
+
+function RunStatusIcon({ status }: { status: Run["status"] }) {
+  switch (status) {
+    case "queued":
+      return <IconClock size={16} className="text-gray-400" />;
+    case "running":
+      return <IconLoader2 size={16} className="animate-spin text-amber-400" />;
+    case "completed":
+      return <IconCircleCheck size={16} className="text-green-400" />;
+    case "failed":
+      return <IconCircleX size={16} className="text-red-400" />;
+    case "cancelled":
+      return <IconBan size={16} className="text-gray-500" />;
+  }
+}
+
+const statusLabel: Record<Run["status"], string> = {
+  queued: "Queued",
+  running: "Running",
+  completed: "Completed",
+  failed: "Failed",
+  cancelled: "Cancelled",
+};
+
+const statusColor: Record<Run["status"], string> = {
+  queued: "text-gray-400",
+  running: "text-amber-400",
+  completed: "text-green-400",
+  failed: "text-red-400",
+  cancelled: "text-gray-500",
+};
+
+function timeAgo(dateStr: string): string {
+  const seconds = Math.floor(
+    (Date.now() - new Date(dateStr + "Z").getTime()) / 1000,
+  );
+  if (seconds < 60) return `${seconds}s ago`;
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.floor(hours / 24);
+  return `${days}d ago`;
+}
+
+function RunsPanel({
+  owner,
+  repo,
+  prNumber,
+  activeSandboxId,
+  onSelectRun,
+}: {
+  owner: string;
+  repo: string;
+  prNumber: number;
+  activeSandboxId: string | null;
+  onSelectRun: (id: string) => void;
+}) {
+  const [runs, setRuns] = useState<Run[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  const fetchRuns = useCallback(async () => {
+    try {
+      const res = await fetch(
+        `/runs?owner=${encodeURIComponent(owner)}&repo=${encodeURIComponent(repo)}&pr=${prNumber}`,
+      );
+      if (res.ok) {
+        const data = await res.json();
+        setRuns(data.runs ?? []);
+      }
+    } catch {
+      // Transient
+    } finally {
+      setLoading(false);
+    }
+  }, [owner, repo, prNumber]);
+
+  useEffect(() => {
+    fetchRuns();
+    const interval = setInterval(fetchRuns, 5_000);
+    return () => clearInterval(interval);
+  }, [fetchRuns]);
+
+  if (loading && runs.length === 0) {
+    return (
+      <div className="border-b border-gray-800 px-6 py-3">
+        <div className="flex items-center gap-2 text-xs text-gray-500">
+          <IconLoader2 size={14} className="animate-spin" />
+          Loading runs...
+        </div>
+      </div>
+    );
+  }
+
+  if (runs.length === 0) return null;
+
+  return (
+    <div className="border-b border-gray-800 px-6 py-3">
+      <div className="mb-2 flex items-center gap-2">
+        <IconGitPullRequest size={14} className="text-gray-500" />
+        <h2 className="text-xs font-semibold uppercase tracking-wide text-gray-500">
+          Runs
+        </h2>
+        <button
+          onClick={fetchRuns}
+          className="ml-auto text-gray-600 transition-colors hover:text-gray-400"
+          title="Refresh"
+        >
+          <IconRefresh size={14} />
+        </button>
+      </div>
+      <div className="flex flex-wrap gap-2">
+        {runs.map((run) => {
+          const isActive = run.id === activeSandboxId;
+          return (
+            <button
+              key={run.id}
+              onClick={() => onSelectRun(run.id)}
+              className={`group flex items-center gap-2 rounded-lg border px-3 py-2 text-left text-xs transition-all ${
+                isActive
+                  ? "border-blue-500/40 bg-blue-950/30"
+                  : "border-gray-800 bg-gray-900/40 hover:border-gray-700 hover:bg-gray-900/60"
+              }`}
+            >
+              <RunStatusIcon status={run.status} />
+              <div className="flex flex-col gap-0.5">
+                <div className="flex items-center gap-1.5">
+                  <span className="font-mono text-gray-300">
+                    {run.commit_sha.slice(0, 7)}
+                  </span>
+                  <span
+                    className={`text-[10px] font-medium ${statusColor[run.status]}`}
+                  >
+                    {statusLabel[run.status]}
+                  </span>
+                </div>
+                <div className="flex items-center gap-2 text-[10px] text-gray-600">
+                  <span className="flex items-center gap-1">
+                    <IconBox size={10} />
+                    {run.id.slice(0, 8)}
+                  </span>
+                  <span className="flex items-center gap-1">
+                    <IconBrain size={10} />
+                    {timeAgo(run.created_at)}
+                  </span>
+                </div>
+              </div>
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Tool call rendering
+// ---------------------------------------------------------------------------
 
 function ToolPartView({ part }: { part: SdkToolPart }) {
   const [expanded, setExpanded] = useState(false);

@@ -9,6 +9,7 @@ import type { Sandbox as SandboxDO } from "@cloudflare/sandbox";
  */
 export interface Env extends Omit<Cloudflare.Env, "Sandbox"> {
   Sandbox: DurableObjectNamespace<SandboxDO>;
+  DB: D1Database;
   // Secrets
   GITHUB_APP_ID: string;
   GITHUB_APP_PRIVATE_KEY: string;
@@ -41,6 +42,30 @@ export interface ChangedFile {
   additions: number;
   deletions: number;
   patch?: string;
+}
+
+/**
+ * Status of a screenshot run tracked in D1.
+ */
+export type RunStatus =
+  | "queued"
+  | "running"
+  | "completed"
+  | "cancelled"
+  | "failed";
+
+/**
+ * A row from the `runs` table.
+ */
+export interface Run {
+  id: string;
+  owner: string;
+  repo: string;
+  pr_number: number;
+  commit_sha: string;
+  status: RunStatus;
+  created_at: string;
+  updated_at: string;
 }
 
 /**

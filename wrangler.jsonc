@@ -38,6 +38,13 @@
   "browser": {
     "binding": "BROWSER",
   },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "visual-diff-db",
+      "database_id": "cb7c4108-d250-46dd-8b53-2c93042ac70f",
+    },
+  ],
   "r2_buckets": [
     {
       "binding": "SCREENSHOTS",
