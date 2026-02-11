@@ -25,8 +25,8 @@ import {
   useStartRun,
   useKillRun,
   useKillAllRuns,
-} from "../../../../browser/api";
-import type { Run, AgentMessage } from "../../../../browser/api";
+} from "../../../../api";
+import type { Run, AgentMessage } from "../../../../api";
 
 // ---------------------------------------------------------------------------
 // Route definition
@@ -145,7 +145,6 @@ function PRViewer() {
             </a>
           </div>
           <div className="flex items-center gap-3">
-            <StatusBadge agentBusy={agentBusy} hasLogs={lines.length > 0} />
             <button
               onClick={handleStart}
               disabled={startRun.isPending}
@@ -252,43 +251,6 @@ function PRViewer() {
         )}
       </div>
     </div>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Status badge
-// ---------------------------------------------------------------------------
-
-function StatusBadge({
-  agentBusy,
-  hasLogs,
-}: {
-  agentBusy: boolean;
-  hasLogs: boolean;
-}) {
-  if (agentBusy) {
-    return (
-      <>
-        <span className="text-xs text-amber-400">Agent running</span>
-        <span className="size-2 animate-pulse rounded-full bg-amber-500" />
-      </>
-    );
-  }
-
-  if (hasLogs) {
-    return (
-      <>
-        <span className="text-xs text-gray-500">Polling</span>
-        <span className="size-2 rounded-full bg-green-500" />
-      </>
-    );
-  }
-
-  return (
-    <>
-      <span className="text-xs text-gray-500">Idle</span>
-      <span className="size-2 rounded-full bg-gray-600" />
-    </>
   );
 }
 

@@ -31,15 +31,18 @@ logs.get("/", async (c) => {
     // Sandbox not reachable -- fall back to R2
   }
 
-  // Look up owner/repo from the run record
-  const run = await getRun(c.env.DB, id);
-  if (!run) return c.json({ lines: [] });
-
   // Fall back to persisted logs in R2
-  const persisted = await getLogsFromR2(c.env, run.owner, run.repo, id);
-  if (persisted) {
-    const lines = persisted.split("\n").filter(Boolean);
-    return c.json({ lines });
+  try {
+    const run = await getRun(c.env.DB, id);
+    if (run) {
+      const persisted = await getLogsFromR2(c.env, run.owner, run.repo, id);
+      if (persisted) {
+        const lines = persisted.split("\n").filter(Boolean);
+        return c.json({ lines });
+      }
+    }
+  } catch (err) {
+    console.error("R2 log fallback failed:", err);
   }
 
   return c.json({ lines: [] });

@@ -229,8 +229,8 @@ export async function startScreenshotJob(
       if (content.trim()) {
         await syncLogsToR2(env, job.owner, job.repo, job.sandboxId, content);
       }
-    } catch {
-      // Sandbox may be gone already
+    } catch (err) {
+      console.error("flushLogs failed:", err);
     }
   };
 
@@ -250,8 +250,8 @@ export async function startScreenshotJob(
           msgs as unknown[],
         );
       }
-    } catch {
-      // OpenCode server may be gone already
+    } catch (err) {
+      console.error("flushMessages failed:", err);
     }
   };
 

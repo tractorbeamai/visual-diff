@@ -60,14 +60,17 @@ messages.get("/", async (c) => {
     // Sandbox not reachable -- fall back to R2
   }
 
-  // Look up owner/repo from the run record
-  const run = await getRun(c.env.DB, id);
-  if (!run) return c.json({ messages: [], status: null });
-
   // Fall back to persisted messages in R2
-  const persisted = await getMessagesFromR2(c.env, run.owner, run.repo, id);
-  if (persisted) {
-    return c.json({ messages: persisted, status: null });
+  try {
+    const run = await getRun(c.env.DB, id);
+    if (run) {
+      const persisted = await getMessagesFromR2(c.env, run.owner, run.repo, id);
+      if (persisted) {
+        return c.json({ messages: persisted, status: null });
+      }
+    }
+  } catch (err) {
+    console.error("R2 messages fallback failed:", err);
   }
 
   return c.json({ messages: [], status: null });
