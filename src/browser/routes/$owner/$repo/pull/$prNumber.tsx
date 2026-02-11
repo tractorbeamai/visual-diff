@@ -647,7 +647,7 @@ function RunsPanel({
               )}
             >
               <RunStatusIcon status={run.status} />
-              <div className="flex flex-col gap-0.5">
+              <div className="flex flex-col items-start gap-0.5">
                 <Tooltip>
                   <TooltipTrigger className="font-mono font-medium text-foreground">
                     {run.commit_sha.slice(0, 7)}

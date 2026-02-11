@@ -260,6 +260,10 @@ export async function startScreenshotJob(
   // The caller runs this via ctx.waitUntil() after ack'ing the queue message,
   // so the 10-minute polling loop doesn't block subsequent jobs.
   return async () => {
+    // Track final status; set to null for cancelled runs (status already set
+    // elsewhere) so the finally block knows not to overwrite it.
+    let finalStatus: "completed" | "failed" | null = "failed";
+
     try {
       // Poll for manifest + session status every 3s.
       // Message progress is now served by the /messages endpoint; the
@@ -278,6 +282,7 @@ export async function startScreenshotJob(
           const stillActive = await isRunActive(env.DB, job.sandboxId);
           if (!stillActive) {
             await log("Run was cancelled (superseded by a newer run).");
+            finalStatus = null;
             return;
           }
         }
@@ -347,7 +352,6 @@ export async function startScreenshotJob(
 
       if (!manifestFound) {
         await log("ERROR: Agent timed out after 10 minutes.");
-        await updateRunStatus(env.DB, job.sandboxId, "failed");
         throw new Error(
           "Agent timed out after 10 minutes without producing a manifest",
         );
@@ -362,7 +366,7 @@ export async function startScreenshotJob(
 
       if (manifest.screenshots.length === 0) {
         await log("Agent produced no screenshots.");
-        await updateRunStatus(env.DB, job.sandboxId, "completed");
+        finalStatus = "completed";
         const octokit = createOctokit(env, job.installationId);
         await postPRComment(
           octokit,
@@ -411,7 +415,7 @@ export async function startScreenshotJob(
         commentBody,
       );
 
-      await updateRunStatus(env.DB, job.sandboxId, "completed");
+      finalStatus = "completed";
       await log(
         `Done! Posted ${uploaded.length} screenshots to PR #${job.prNumber}.`,
       );
@@ -420,11 +424,7 @@ export async function startScreenshotJob(
       );
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
-      try {
-        await updateRunStatus(env.DB, job.sandboxId, "failed");
-      } catch {
-        // Best effort
-      }
+      // finalStatus stays "failed"
       try {
         await log(`ERROR: ${message}`);
       } catch {
@@ -432,8 +432,17 @@ export async function startScreenshotJob(
       }
       throw err;
     } finally {
-      // Final sync before tearing down the sandbox
+      // Flush logs + messages to R2 BEFORE updating run status.
+      // This ensures R2 has the final data when the frontend sees the
+      // status change and switches from live sandbox to R2 fallback.
       await Promise.all([flushLogs(), flushMessages()]);
+      if (finalStatus) {
+        try {
+          await updateRunStatus(env.DB, job.sandboxId, finalStatus);
+        } catch {
+          // Best effort
+        }
+      }
       try {
         await server.close();
       } catch {

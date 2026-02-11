@@ -26,9 +26,14 @@ logs.get("/", async (c) => {
 
     const lines = (result.stdout ?? "").split("\n").filter(Boolean);
 
-    return c.json({ lines });
+    // If the sandbox returned actual content, use it. An empty result likely
+    // means the sandbox is in a zombie state (destroyed but stub still
+    // responds) -- fall through to R2 instead of returning nothing.
+    if (lines.length > 0) {
+      return c.json({ lines });
+    }
   } catch {
-    // Sandbox not reachable -- fall back to R2
+    // Sandbox not reachable -- fall through to R2
   }
 
   // Fall back to persisted logs in R2
