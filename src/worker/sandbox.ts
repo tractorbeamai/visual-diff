@@ -172,40 +172,35 @@ export async function startScreenshotJob(
   const sessionId = session.data.id;
   await log(`Session created: ${sessionId}`);
 
-  await log("Sending prompt...");
+  await log("Sending prompt (async)...");
 
-  // Fire off the prompt in the background -- it runs inside the container
-  // and we track progress via the message polling loop in the cleanup closure.
-  const promptConsumer = (async () => {
-    try {
-      const result = await client.session.prompt({
-        path: { id: sessionId },
-        query: { directory },
-        body: {
-          model: {
-            providerID: "anthropic",
-            modelID: "claude-sonnet-4-5",
-          },
-          system: systemPrompt,
-          parts: [
-            {
-              type: "text" as const,
-              text: "Analyze the PR and take screenshots of affected pages. Follow all instructions in the system prompt.",
-            },
-          ],
+  // Use promptAsync so the HTTP call returns immediately (204) and the agent
+  // runs in the background inside the container. The synchronous `prompt()`
+  // method keeps the HTTP connection open for the entire agent run, which
+  // gets killed by intermediate proxy/subrequest timeouts causing a hang.
+  const promptResult = await client.session.promptAsync({
+    path: { id: sessionId },
+    query: { directory },
+    body: {
+      model: {
+        providerID: "anthropic",
+        modelID: "claude-sonnet-4-5",
+      },
+      system: systemPrompt,
+      parts: [
+        {
+          type: "text" as const,
+          text: "Analyze the PR and take screenshots of affected pages. Follow all instructions in the system prompt.",
         },
-      });
+      ],
+    },
+  });
 
-      if (result.error) {
-        await log(`[prompt-error] ${JSON.stringify(result.error)}`);
-      } else {
-        await log(`[prompt-done] ${JSON.stringify(result.data).slice(0, 500)}`);
-      }
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      await log(`[prompt-exception] ${msg}`);
-    }
-  })();
+  if (promptResult.error) {
+    throw new Error(
+      `Failed to send prompt: ${JSON.stringify(promptResult.error)}`,
+    );
+  }
 
   await log("Agent is working...");
 
@@ -214,9 +209,10 @@ export async function startScreenshotJob(
   // so the 10-minute polling loop doesn't block subsequent jobs.
   return async () => {
     try {
-      // Poll for manifest + session messages every 3s
+      // Poll for manifest + session status + messages every 3s
       const deadline = Date.now() + 600_000;
       let manifestFound = false;
+      let agentDone = false;
       let pollCount = 0;
       let lastMsgCount = 0;
 
@@ -236,6 +232,23 @@ export async function startScreenshotJob(
           }
         }
 
+        // Poll session status to detect when agent finishes
+        try {
+          const { data: statuses } = await client.session.status({
+            query: { directory },
+          });
+          if (statuses) {
+            const status = (statuses as Record<string, { type: string }>)[
+              sessionId
+            ];
+            if (status?.type === "idle" && pollCount > 1) {
+              agentDone = true;
+            }
+          }
+        } catch {
+          // Non-critical
+        }
+
         // Poll session messages for real-time progress
         try {
           const { data: msgs } = await client.session.messages({
@@ -253,18 +266,37 @@ export async function startScreenshotJob(
           // Non-critical
         }
 
+        // If agent finished, check for manifest one more time then break
+        if (agentDone) {
+          await log("Agent session is idle -- checking for manifest...");
+          const check = await sandbox.exec(
+            "test -f /workspace/screenshot-manifest.json && echo EXISTS",
+          );
+          if (check.stdout?.includes("EXISTS")) {
+            manifestFound = true;
+            await log("Manifest file detected.");
+          } else {
+            await log(
+              "Agent finished but no manifest found. Waiting 5s and retrying...",
+            );
+            await new Promise((r) => setTimeout(r, 5_000));
+            const retry = await sandbox.exec(
+              "test -f /workspace/screenshot-manifest.json && echo EXISTS",
+            );
+            if (retry.stdout?.includes("EXISTS")) {
+              manifestFound = true;
+              await log("Manifest file detected on retry.");
+            }
+          }
+          break;
+        }
+
         // Log elapsed time every ~60s
         if (pollCount % 20 === 0) {
           const elapsed = Math.round((pollCount * 3) / 60);
           await log(`Still working... (${elapsed}m elapsed)`);
         }
       }
-
-      // Let the prompt consumer finish
-      await Promise.race([
-        promptConsumer,
-        new Promise((r) => setTimeout(r, 5_000)),
-      ]);
 
       if (!manifestFound) {
         await log("ERROR: Agent timed out after 10 minutes.");
