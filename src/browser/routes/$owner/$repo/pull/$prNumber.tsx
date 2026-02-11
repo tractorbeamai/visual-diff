@@ -13,7 +13,6 @@ import {
   IconBan,
   IconClock,
   IconBox,
-  IconBrain,
   IconGitPullRequest,
   IconSkull,
   IconExternalLink,
@@ -30,7 +29,7 @@ import type { Run, AgentMessage } from "@/api";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
-import { Card, CardContent } from "@/components/ui/card";
+import type React from "react";
 import { cn } from "@/lib/utils";
 
 // ---------------------------------------------------------------------------
@@ -130,62 +129,63 @@ function PRViewer() {
 
   return (
     <div className="flex h-screen flex-col overflow-hidden bg-background font-sans antialiased text-foreground">
-      <header className="border-b border-border px-6 py-4">
+      <header className="border-b border-border px-6 py-3">
         <div className="flex items-center justify-between">
-          <div className="flex items-center gap-4">
-            <div className="flex items-center gap-2">
-              <IconGitPullRequest size={20} className="text-green-400" />
-              <h1 className="text-base font-semibold">
-                {owner}/{repo} #{prNumber}
+          <div className="flex items-center gap-3">
+            <IconGitPullRequest size={18} className="text-green-400" />
+            <div>
+              <h1 className="text-sm font-semibold leading-tight">
+                {owner}/{repo}{" "}
+                <span className="text-muted-foreground">#{prNumber}</span>
               </h1>
+              <div className="mt-0.5 flex items-center gap-3 text-xs text-muted-foreground/60">
+                {latestCommit && (
+                  <a
+                    href={`https://github.com/${owner}/${repo}/commit/${latestCommit}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="font-mono hover:text-foreground"
+                  >
+                    {latestCommit.slice(0, 7)}
+                  </a>
+                )}
+                {activeRuns.length > 0 && (
+                  <span className="text-amber-400">
+                    {activeRuns.length} active
+                  </span>
+                )}
+                {sandboxId && (
+                  <span>
+                    viewing{" "}
+                    <span className="font-mono">{sandboxId.slice(0, 8)}</span>
+                  </span>
+                )}
+              </div>
             </div>
+          </div>
+          <div className="flex items-center gap-2">
             <a
               href={ghUrl}
               target="_blank"
               rel="noopener noreferrer"
-              className="flex items-center gap-1 text-xs text-muted-foreground transition-colors hover:text-foreground"
+              className="flex items-center gap-1 rounded-md px-2 py-1.5 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
             >
               <IconExternalLink size={12} />
               GitHub
             </a>
+            <Button
+              onClick={handleStart}
+              disabled={startRun.isPending}
+              size="sm"
+            >
+              {startRun.isPending ? (
+                <IconLoader2 size={14} className="animate-spin" />
+              ) : (
+                <IconPlayerPlay size={14} />
+              )}
+              {startRun.isPending ? "Starting..." : "New run"}
+            </Button>
           </div>
-          <Button onClick={handleStart} disabled={startRun.isPending} size="sm">
-            {startRun.isPending ? (
-              <IconLoader2 size={14} className="animate-spin" />
-            ) : (
-              <IconPlayerPlay size={14} />
-            )}
-            {startRun.isPending ? "Starting..." : "New run"}
-          </Button>
-        </div>
-        <div className="mt-2 flex items-center gap-4 text-xs text-muted-foreground">
-          {latestCommit && (
-            <span>
-              Latest commit:{" "}
-              <a
-                href={`https://github.com/${owner}/${repo}/commit/${latestCommit}`}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="font-mono text-foreground/70 hover:text-foreground"
-              >
-                {latestCommit.slice(0, 7)}
-              </a>
-            </span>
-          )}
-          <span>
-            {runs.length} run{runs.length !== 1 ? "s" : ""}
-          </span>
-          {activeRuns.length > 0 && (
-            <span className="text-amber-400">{activeRuns.length} active</span>
-          )}
-          {sandboxId && (
-            <span>
-              Viewing:{" "}
-              <span className="font-mono text-foreground/70">
-                {sandboxId.slice(0, 8)}
-              </span>
-            </span>
-          )}
         </div>
       </header>
 
@@ -205,51 +205,56 @@ function PRViewer() {
       <div
         ref={timelineRef}
         onScroll={handleTimelineScroll}
-        className="min-h-0 flex-1 overflow-y-auto px-6 py-4"
+        className="min-h-0 flex-1 overflow-y-auto px-6 py-6"
       >
-        {lines.length === 0 && agentMessages.length === 0 && (
-          <div className="text-muted-foreground/50">
-            Click "New run" to begin.
-          </div>
-        )}
+        <div className="mx-auto max-w-3xl space-y-4">
+          {lines.length === 0 && agentMessages.length === 0 && (
+            <div className="py-12 text-center text-sm text-muted-foreground">
+              Click &ldquo;New run&rdquo; to begin.
+            </div>
+          )}
 
-        {startLogs.length > 0 && (
-          <div className="space-y-0.5 font-mono text-xs leading-relaxed">
-            {startLogs.map((line, i) => (
-              <SetupLogEntry key={`s-${i}`} raw={line} />
-            ))}
-          </div>
-        )}
+          {startLogs.length > 0 && (
+            <div className="space-y-0.5 font-mono text-xs leading-relaxed">
+              {startLogs.map((line, i) => (
+                <SetupLogEntry key={`s-${i}`} raw={line} />
+              ))}
+            </div>
+          )}
 
-        {agentStarted && <SectionDivider label="Agent" />}
+          {agentStarted && <SectionDivider label="Agent" />}
 
-        {agentMessages.length === 0 && agentStarted && !agentEnded && (
-          <div className="text-sm text-muted-foreground">
-            Waiting for agent messages...
-          </div>
-        )}
+          {agentMessages.length === 0 && agentStarted && !agentEnded && (
+            <div className="text-sm text-muted-foreground">
+              Waiting for agent messages...
+            </div>
+          )}
 
-        {agentMessages.length > 0 && (
-          <div className="space-y-1">
-            {agentMessages.map((msg) => (
-              <MessageParts key={msg.info.id} message={msg} />
-            ))}
-          </div>
-        )}
+          {agentMessages.length > 0 && (
+            <div className="space-y-3">
+              {agentMessages.map((msg) => (
+                <MessageParts key={msg.info.id} message={msg} />
+              ))}
+            </div>
+          )}
 
-        {agentBusy && !agentEnded && (
-          <div className="mt-3 text-sm text-amber-400">Agent is working...</div>
-        )}
+          {agentBusy && !agentEnded && (
+            <div className="flex items-center gap-2 py-2 text-sm text-amber-400">
+              <IconLoader2 size={14} className="animate-spin" />
+              Agent is working...
+            </div>
+          )}
 
-        {agentEnded && <SectionDivider label="Results" />}
+          {agentEnded && <SectionDivider label="Results" />}
 
-        {endLogs.length > 0 && (
-          <div className="space-y-0.5 font-mono text-xs leading-relaxed">
-            {endLogs.map((line, i) => (
-              <SetupLogEntry key={`e-${i}`} raw={line} />
-            ))}
-          </div>
-        )}
+          {endLogs.length > 0 && (
+            <div className="space-y-0.5 font-mono text-xs leading-relaxed">
+              {endLogs.map((line, i) => (
+                <SetupLogEntry key={`e-${i}`} raw={line} />
+              ))}
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );
@@ -293,9 +298,9 @@ function SetupLogEntry({ raw }: { raw: string }) {
 
 function SectionDivider({ label }: { label: string }) {
   return (
-    <div className="flex items-center gap-3 py-3">
+    <div className="flex items-center gap-3 py-2">
       <Separator className="flex-1" />
-      <span className="text-xs font-semibold uppercase tracking-widest text-muted-foreground/50">
+      <span className="text-[10px] font-medium uppercase tracking-widest text-muted-foreground/40">
         {label}
       </span>
       <Separator className="flex-1" />
@@ -312,7 +317,7 @@ function MessageParts({ message }: { message: AgentMessage }) {
   const isAssistant = info.role === "assistant";
 
   return (
-    <div className="space-y-1">
+    <div className="space-y-2">
       {parts.map((part, i) => (
         <PartView key={i} part={part} isAssistant={isAssistant} />
       ))}
@@ -332,10 +337,167 @@ function PartView({ part, isAssistant }: { part: Part; isAssistant: boolean }) {
     case "tool":
       return <ToolPartView part={part as SdkToolPart} />;
     case "step-start":
-      return <Separator className="my-1 opacity-30" />;
+      return <Separator className="my-2 opacity-20" />;
     default:
       return null;
   }
+}
+
+function renderInlineMarkdown(text: string): React.ReactNode[] {
+  const nodes: React.ReactNode[] = [];
+  // Match bold, inline code, or plain text
+  const pattern = /(\*\*(.+?)\*\*|`([^`]+?)`)/g;
+  let lastIndex = 0;
+  let match;
+
+  while ((match = pattern.exec(text)) !== null) {
+    if (match.index > lastIndex) {
+      nodes.push(text.slice(lastIndex, match.index));
+    }
+    if (match[2]) {
+      nodes.push(
+        <strong key={match.index} className="font-semibold">
+          {match[2]}
+        </strong>,
+      );
+    } else if (match[3]) {
+      nodes.push(
+        <code
+          key={match.index}
+          className="rounded bg-muted px-1.5 py-0.5 font-mono text-[0.8125rem]"
+        >
+          {match[3]}
+        </code>,
+      );
+    }
+    lastIndex = match.index + match[0].length;
+  }
+  if (lastIndex < text.length) {
+    nodes.push(text.slice(lastIndex));
+  }
+  return nodes;
+}
+
+function SimpleMarkdown({
+  text,
+  className,
+}: {
+  text: string;
+  className?: string;
+}) {
+  const lines = text.split("\n");
+  const elements: React.ReactNode[] = [];
+  let i = 0;
+
+  while (i < lines.length) {
+    const line = lines[i];
+
+    // Code block
+    if (line.startsWith("```")) {
+      const codeLines: string[] = [];
+      i++;
+      while (i < lines.length && !lines[i].startsWith("```")) {
+        codeLines.push(lines[i]);
+        i++;
+      }
+      i++; // skip closing ```
+      elements.push(
+        <pre
+          key={`code-${i}`}
+          className="overflow-x-auto rounded-lg bg-muted/50 px-4 py-3 font-mono text-xs leading-relaxed text-foreground/80"
+        >
+          {codeLines.join("\n")}
+        </pre>,
+      );
+      continue;
+    }
+
+    // Headings
+    if (line.startsWith("## ")) {
+      elements.push(
+        <h3
+          key={`h-${i}`}
+          className="mt-3 mb-1 text-sm font-semibold text-foreground"
+        >
+          {renderInlineMarkdown(line.slice(3))}
+        </h3>,
+      );
+      i++;
+      continue;
+    }
+    if (line.startsWith("# ")) {
+      elements.push(
+        <h2
+          key={`h-${i}`}
+          className="mt-3 mb-1 text-base font-semibold text-foreground"
+        >
+          {renderInlineMarkdown(line.slice(2))}
+        </h2>,
+      );
+      i++;
+      continue;
+    }
+
+    // List items
+    if (line.match(/^[-*]\s/)) {
+      const listItems: React.ReactNode[] = [];
+      while (i < lines.length && lines[i].match(/^[-*]\s/)) {
+        listItems.push(
+          <li key={`li-${i}`}>
+            {renderInlineMarkdown(lines[i].replace(/^[-*]\s/, ""))}
+          </li>,
+        );
+        i++;
+      }
+      elements.push(
+        <ul
+          key={`ul-${i}`}
+          className="list-disc space-y-0.5 pl-5 text-sm leading-relaxed"
+        >
+          {listItems}
+        </ul>,
+      );
+      continue;
+    }
+
+    // Numbered list
+    if (line.match(/^\d+\.\s/)) {
+      const listItems: React.ReactNode[] = [];
+      while (i < lines.length && lines[i].match(/^\d+\.\s/)) {
+        listItems.push(
+          <li key={`li-${i}`}>
+            {renderInlineMarkdown(lines[i].replace(/^\d+\.\s/, ""))}
+          </li>,
+        );
+        i++;
+      }
+      elements.push(
+        <ol
+          key={`ol-${i}`}
+          className="list-decimal space-y-0.5 pl-5 text-sm leading-relaxed"
+        >
+          {listItems}
+        </ol>,
+      );
+      continue;
+    }
+
+    // Blank line
+    if (!line.trim()) {
+      i++;
+      continue;
+    }
+
+    // Regular paragraph
+    elements.push(
+      <p key={`p-${i}`} className="text-sm leading-relaxed">
+        {renderInlineMarkdown(line)}
+      </p>,
+    );
+    i++;
+  }
+
+  return <div className={cn("space-y-2", className)}>{elements}</div>;
 }
 
 function TextPartView({
@@ -347,14 +509,10 @@ function TextPartView({
 }) {
   if (!text.trim()) return null;
   return (
-    <p
-      className={cn(
-        "whitespace-pre-wrap font-sans text-sm leading-relaxed",
-        isAssistant ? "text-foreground" : "text-muted-foreground",
-      )}
-    >
-      {text}
-    </p>
+    <SimpleMarkdown
+      text={text}
+      className={isAssistant ? "text-foreground" : "text-muted-foreground"}
+    />
   );
 }
 
@@ -452,10 +610,12 @@ function RunsPanel({
   return (
     <div className="border-b border-border px-6 py-3">
       <div className="mb-2 flex items-center gap-2">
-        <IconGitPullRequest size={14} className="text-muted-foreground" />
-        <h2 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+        <h2 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
           Runs
         </h2>
+        <span className="text-xs text-muted-foreground/50">
+          {runs.length}
+        </span>
         {hasActive && (
           <Button
             onClick={onKillAll}
@@ -473,47 +633,39 @@ function RunsPanel({
           </Button>
         )}
       </div>
-      <div className="flex flex-wrap gap-2">
+      <div className="flex gap-2 overflow-x-auto pb-1">
         {runs.map((run) => {
           const isActive = run.id === activeSandboxId;
           const isKillable =
             run.status === "queued" || run.status === "running";
           const isKilling = killingIds.has(run.id);
           return (
-            <Card
+            <button
               key={run.id}
-              size="sm"
+              onClick={() => onSelectRun(run.id)}
               className={cn(
-                "group flex-row items-center gap-2 px-3 py-2 text-xs transition-all",
+                "flex shrink-0 items-center gap-2.5 rounded-lg border px-3 py-2 text-left text-xs transition-all",
                 isActive
-                  ? "ring-primary/40 bg-primary/5"
-                  : "hover:ring-foreground/20 hover:bg-muted/50",
+                  ? "border-primary/30 bg-primary/5"
+                  : "border-border bg-card hover:border-foreground/20 hover:bg-muted/30",
               )}
             >
-              <button
-                onClick={() => onSelectRun(run.id)}
-                className="flex items-center gap-2 text-left"
-              >
-                <RunStatusIcon status={run.status} />
-                <div className="flex flex-col gap-0.5">
-                  <div className="flex items-center gap-1.5">
-                    <span className="font-mono text-foreground">
-                      {run.commit_sha.slice(0, 7)}
-                    </span>
-                    <StatusBadge status={run.status} />
-                  </div>
-                  <div className="flex items-center gap-2 text-xs text-muted-foreground/50">
-                    <span className="flex items-center gap-1">
-                      <IconBox size={10} />
-                      {run.id.slice(0, 8)}
-                    </span>
-                    <span className="flex items-center gap-1">
-                      <IconBrain size={10} />
-                      {timeAgo(run.created_at)}
-                    </span>
-                  </div>
+              <RunStatusIcon status={run.status} />
+              <div className="flex flex-col gap-0.5">
+                <div className="flex items-center gap-1.5">
+                  <span className="font-mono font-medium text-foreground">
+                    {run.commit_sha.slice(0, 7)}
+                  </span>
+                  <StatusBadge status={run.status} />
                 </div>
-              </button>
+                <div className="flex items-center gap-2 text-[11px] text-muted-foreground/60">
+                  <span className="flex items-center gap-1">
+                    <IconBox size={10} />
+                    {run.id.slice(0, 8)}
+                  </span>
+                  <span>{timeAgo(run.created_at)}</span>
+                </div>
+              </div>
               {isKillable && (
                 <Button
                   onClick={(e) => {
@@ -532,7 +684,7 @@ function RunsPanel({
                   )}
                 </Button>
               )}
-            </Card>
+            </button>
           );
         })}
       </div>
@@ -571,69 +723,80 @@ function ToolPartView({ part }: { part: SdkToolPart }) {
   const hasDetails = hasInput || hasOutput || hasError;
 
   return (
-    <Card size="sm" className="text-xs">
+    <div
+      className={cn(
+        "rounded-lg border text-xs transition-colors",
+        status === "error"
+          ? "border-destructive/20 bg-destructive/5"
+          : "border-border bg-card",
+      )}
+    >
       <button
         onClick={() => hasDetails && setExpanded((v) => !v)}
         className={cn(
-          "flex w-full items-center gap-2 px-3 py-1.5 text-left",
-          hasDetails ? "cursor-pointer hover:bg-muted/50" : "cursor-default",
+          "flex w-full items-center gap-2 px-3 py-2 text-left",
+          hasDetails
+            ? "cursor-pointer hover:bg-muted/30"
+            : "cursor-default",
         )}
       >
         {!!hasDetails && (
           <span
             className={cn(
-              "text-xs text-muted-foreground/50 transition-transform",
+              "text-[10px] text-muted-foreground/40 transition-transform",
               expanded && "rotate-90",
             )}
           >
             &#9654;
           </span>
         )}
-        <span className="font-mono font-medium text-foreground">{name}</span>
+        <span className="font-mono font-medium text-foreground/80">
+          {name}
+        </span>
         {title && (
-          <span className="truncate text-muted-foreground">{title}</span>
+          <span className="truncate text-muted-foreground/60">{title}</span>
         )}
         <Badge
           variant={badgeVariant[status] ?? "secondary"}
-          className="ml-auto text-xs"
+          className="ml-auto text-[10px]"
         >
           {status}
         </Badge>
       </button>
       {expanded && (
-        <CardContent className="space-y-2 border-t border-border px-3 py-2">
+        <div className="space-y-2 border-t border-border px-3 py-2">
           {hasInput && (
             <div>
-              <div className="mb-0.5 text-xs font-medium uppercase tracking-wide text-muted-foreground/50">
+              <div className="mb-1 text-[10px] font-medium uppercase tracking-wider text-muted-foreground/40">
                 Input
               </div>
-              <pre className="max-h-40 overflow-auto whitespace-pre-wrap text-muted-foreground">
+              <pre className="max-h-40 overflow-auto whitespace-pre-wrap rounded bg-muted/30 p-2 font-mono text-[11px] text-muted-foreground">
                 {JSON.stringify(state.input, null, 2)}
               </pre>
             </div>
           )}
           {hasOutput && (
             <div>
-              <div className="mb-0.5 text-xs font-medium uppercase tracking-wide text-muted-foreground/50">
+              <div className="mb-1 text-[10px] font-medium uppercase tracking-wider text-muted-foreground/40">
                 Output
               </div>
-              <pre className="max-h-60 overflow-auto whitespace-pre-wrap text-muted-foreground">
+              <pre className="max-h-60 overflow-auto whitespace-pre-wrap rounded bg-muted/30 p-2 font-mono text-[11px] text-muted-foreground">
                 {state.status === "completed" ? state.output : ""}
               </pre>
             </div>
           )}
           {hasError && (
             <div>
-              <div className="mb-0.5 text-xs font-medium uppercase tracking-wide text-destructive">
+              <div className="mb-1 text-[10px] font-medium uppercase tracking-wider text-destructive/70">
                 Error
               </div>
-              <pre className="max-h-40 overflow-auto whitespace-pre-wrap text-destructive">
+              <pre className="max-h-40 overflow-auto whitespace-pre-wrap rounded bg-destructive/5 p-2 font-mono text-[11px] text-destructive">
                 {state.status === "error" ? state.error : ""}
               </pre>
             </div>
           )}
-        </CardContent>
+        </div>
       )}
-    </Card>
+    </div>
   );
 }
