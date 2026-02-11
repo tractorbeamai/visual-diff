@@ -19,18 +19,36 @@ Read these first:
 ## Your workflow
 
 1. **Read the PR context** files above to understand what changed.
-2. **Read the repo's CLAUDE.md** if it exists (at /workspace/repo/CLAUDE.md) for project-specific instructions.
-3. **Analyze the codebase** to understand the routing structure. Look for:
+2. **Read agent/project config files** to understand how to set up the dev environment. Check these in order of priority:
+   - **Cursor cloud agent config**: \`/workspace/repo/.cursor/environment.json\` -- this is the most reliable source. It contains:
+     - \`install\`: the exact dependency install command (e.g. \`npm install\`, \`pnpm install\`, \`bazel build\`)
+     - \`terminals\`: background processes like dev servers, with \`name\`, \`command\`, and \`ports\`
+     - \`start\`: startup commands (e.g. \`sudo service docker start\`)
+     - \`env\`: environment variables needed
+     - \`baseImage\`: the expected runtime (e.g. \`ghcr.io/cursor-images/node-20:latest\`)
+   - **Cursor rules**: \`/workspace/repo/.cursor/rules/*.mdc\` files may contain setup instructions or project conventions
+   - **Agent instructions**: \`/workspace/repo/AGENTS.md\` or \`/workspace/repo/CLAUDE.md\` for project-specific agent guidance
+3. **Check CI configurations** for build/run requirements. These are often the most accurate source of truth for how to build and run the project:
+   - \`/workspace/repo/.github/workflows/*.yml\` -- GitHub Actions workflows. Look for install steps, build commands, env vars, and service containers.
+   - \`/workspace/repo/.gitlab-ci.yml\` -- GitLab CI config
+   - \`/workspace/repo/.circleci/config.yml\` -- CircleCI config
+   - \`/workspace/repo/Makefile\` or \`/workspace/repo/Taskfile.yml\` -- task runners
+   Look for: dependency install commands, build steps, required environment variables, Node/Python/runtime version requirements, and any services (databases, Redis, etc.) the app needs.
+4. **Analyze the codebase** to understand the routing structure. Look for:
    - File-based routing (Next.js pages/, app/ dirs, Remix routes/, etc.)
    - Router configuration files
    - Existing Playwright/Cypress tests for route patterns and auth flows
-4. **Determine which routes/pages were affected** by the PR changes.
-5. **Install dependencies** in /workspace/repo -- run the appropriate install command (npm install, yarn install, pnpm install, etc.)
-6. **Start the dev server** on port 8080 (NOT port 3000 -- that's reserved by the sandbox).
-   - Use PORT=8080 or the appropriate env var/flag for the framework.
+5. **Determine which routes/pages were affected** by the PR changes.
+6. **Install dependencies and build** in /workspace/repo:
+   - If \`.cursor/environment.json\` exists, use its \`install\` command.
+   - Otherwise, infer from CI configs or lock files (package-lock.json -> npm, pnpm-lock.yaml -> pnpm, yarn.lock -> yarn, etc.)
+   - If CI workflows show a separate build step, run that too.
+7. **Start the dev server** on port 8080 (NOT port 3000 -- that's reserved by the sandbox).
+   - If \`.cursor/environment.json\` has a \`terminals\` entry, adapt its command to use port 8080.
+   - Otherwise, use PORT=8080 or the appropriate env var/flag for the framework.
    - Wait for it to be ready (check with curl http://localhost:8080).
    - Run the dev server in the background.
-7. **Use agent-browser to take screenshots** of each affected route:
+8. **Use agent-browser to take screenshots** of each affected route:
 
    Connect to the remote browser:
    \`\`\`
@@ -51,7 +69,7 @@ Read these first:
 
    If the app requires authentication, look at existing test files (Playwright, Cypress) to find test credentials and login flows. Perform the login flow before taking screenshots of protected routes.
 
-8. **Write the screenshot manifest** to /workspace/screenshot-manifest.json with this exact format:
+9. **Write the screenshot manifest** to /workspace/screenshot-manifest.json with this exact format:
    \`\`\`json
    {
      "screenshots": [

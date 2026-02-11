@@ -29,6 +29,17 @@ import type { Run, AgentMessage } from "@/api";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
+import {
+  Collapsible,
+  CollapsibleTrigger,
+  CollapsibleContent,
+} from "@/components/ui/collapsible";
+import {
+  Tooltip,
+  TooltipTrigger,
+  TooltipContent,
+} from "@/components/ui/tooltip";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import type React from "react";
 import { cn } from "@/lib/utils";
 
@@ -168,7 +179,7 @@ function PRViewer() {
               href={ghUrl}
               target="_blank"
               rel="noopener noreferrer"
-              className="flex items-center gap-1 rounded-md px-2 py-1.5 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+              className="flex items-center gap-1 px-2 py-1.5 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
             >
               <IconExternalLink size={12} />
               GitHub
@@ -364,7 +375,7 @@ function renderInlineMarkdown(text: string): React.ReactNode[] {
       nodes.push(
         <code
           key={match.index}
-          className="rounded bg-muted px-1.5 py-0.5 font-mono text-[0.8125rem]"
+          className="bg-muted px-1.5 py-0.5 font-mono text-[0.8125rem]"
         >
           {match[3]}
         </code>,
@@ -404,7 +415,7 @@ function SimpleMarkdown({
       elements.push(
         <pre
           key={`code-${i}`}
-          className="overflow-x-auto rounded-lg bg-muted/50 px-4 py-3 font-mono text-xs leading-relaxed text-foreground/80"
+          className="overflow-x-auto bg-muted/50 px-4 py-3 font-mono text-xs leading-relaxed text-foreground/80"
         >
           {codeLines.join("\n")}
         </pre>,
@@ -613,9 +624,7 @@ function RunsPanel({
         <h2 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
           Runs
         </h2>
-        <span className="text-xs text-muted-foreground/50">
-          {runs.length}
-        </span>
+        <span className="text-xs text-muted-foreground/50">{runs.length}</span>
         {hasActive && (
           <Button
             onClick={onKillAll}
@@ -644,7 +653,7 @@ function RunsPanel({
               key={run.id}
               onClick={() => onSelectRun(run.id)}
               className={cn(
-                "flex shrink-0 items-center gap-2.5 rounded-lg border px-3 py-2 text-left text-xs transition-all",
+                "flex shrink-0 items-center gap-2.5 border px-3 py-2 text-left text-xs transition-all",
                 isActive
                   ? "border-primary/30 bg-primary/5"
                   : "border-border bg-card hover:border-foreground/20 hover:bg-muted/30",
@@ -725,7 +734,7 @@ function ToolPartView({ part }: { part: SdkToolPart }) {
   return (
     <div
       className={cn(
-        "rounded-lg border text-xs transition-colors",
+        "border text-xs transition-colors",
         status === "error"
           ? "border-destructive/20 bg-destructive/5"
           : "border-border bg-card",
@@ -735,9 +744,7 @@ function ToolPartView({ part }: { part: SdkToolPart }) {
         onClick={() => hasDetails && setExpanded((v) => !v)}
         className={cn(
           "flex w-full items-center gap-2 px-3 py-2 text-left",
-          hasDetails
-            ? "cursor-pointer hover:bg-muted/30"
-            : "cursor-default",
+          hasDetails ? "cursor-pointer hover:bg-muted/30" : "cursor-default",
         )}
       >
         {!!hasDetails && (
@@ -750,9 +757,7 @@ function ToolPartView({ part }: { part: SdkToolPart }) {
             &#9654;
           </span>
         )}
-        <span className="font-mono font-medium text-foreground/80">
-          {name}
-        </span>
+        <span className="font-mono font-medium text-foreground/80">{name}</span>
         {title && (
           <span className="truncate text-muted-foreground/60">{title}</span>
         )}
@@ -770,7 +775,7 @@ function ToolPartView({ part }: { part: SdkToolPart }) {
               <div className="mb-1 text-[10px] font-medium uppercase tracking-wider text-muted-foreground/40">
                 Input
               </div>
-              <pre className="max-h-40 overflow-auto whitespace-pre-wrap rounded bg-muted/30 p-2 font-mono text-[11px] text-muted-foreground">
+              <pre className="max-h-40 overflow-auto whitespace-pre-wrap bg-muted/30 p-2 font-mono text-[11px] text-muted-foreground">
                 {JSON.stringify(state.input, null, 2)}
               </pre>
             </div>
@@ -780,7 +785,7 @@ function ToolPartView({ part }: { part: SdkToolPart }) {
               <div className="mb-1 text-[10px] font-medium uppercase tracking-wider text-muted-foreground/40">
                 Output
               </div>
-              <pre className="max-h-60 overflow-auto whitespace-pre-wrap rounded bg-muted/30 p-2 font-mono text-[11px] text-muted-foreground">
+              <pre className="max-h-60 overflow-auto whitespace-pre-wrap bg-muted/30 p-2 font-mono text-[11px] text-muted-foreground">
                 {state.status === "completed" ? state.output : ""}
               </pre>
             </div>
@@ -790,7 +795,7 @@ function ToolPartView({ part }: { part: SdkToolPart }) {
               <div className="mb-1 text-[10px] font-medium uppercase tracking-wider text-destructive/70">
                 Error
               </div>
-              <pre className="max-h-40 overflow-auto whitespace-pre-wrap rounded bg-destructive/5 p-2 font-mono text-[11px] text-destructive">
+              <pre className="max-h-40 overflow-auto whitespace-pre-wrap bg-destructive/5 p-2 font-mono text-[11px] text-destructive">
                 {state.status === "error" ? state.error : ""}
               </pre>
             </div>

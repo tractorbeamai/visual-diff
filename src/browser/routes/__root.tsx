@@ -1,5 +1,6 @@
 import { createRootRoute, Outlet } from "@tanstack/react-router";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { TooltipProvider } from "@/components/ui/tooltip";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -14,7 +15,9 @@ function RootLayout() {
   return (
     <div className="dark">
       <QueryClientProvider client={queryClient}>
-        <Outlet />
+        <TooltipProvider>
+          <Outlet />
+        </TooltipProvider>
       </QueryClientProvider>
     </div>
   );
