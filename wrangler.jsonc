@@ -50,6 +50,10 @@
       "binding": "SCREENSHOTS",
       "bucket_name": "visual-diff-screenshots",
     },
+    {
+      "binding": "LOGS",
+      "bucket_name": "visual-diff-logs",
+    },
   ],
   "queues": {
     "producers": [

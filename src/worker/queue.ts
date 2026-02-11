@@ -7,6 +7,7 @@ import {
 } from "./github";
 import { startScreenshotJob } from "./sandbox";
 import { isRunActive, updateRunStatus } from "./db";
+import { syncLogsToR2 } from "./storage";
 import type { Env, QueueMessage } from "./types";
 
 /**
@@ -43,7 +44,7 @@ export async function handleQueue(
         // Best effort
       }
 
-      // Best-effort: write error to the sandbox log
+      // Best-effort: write error to the sandbox log + sync to R2
       try {
         const sandbox = getSandbox(env.Sandbox, job.sandboxId);
         const ts = new Date().toISOString();
@@ -53,6 +54,20 @@ export async function handleQueue(
         await sandbox.exec(
           `echo '${ts} ERROR: Job failed -- ${clean}'  >> /workspace/agent.log`,
         );
+        // Flush logs to R2 before destroying the sandbox
+        const logResult = await sandbox.exec(
+          "cat /workspace/agent.log 2>/dev/null || true",
+        );
+        const logContent = logResult.stdout ?? "";
+        if (logContent.trim()) {
+          await syncLogsToR2(
+            env,
+            job.owner,
+            job.repo,
+            job.sandboxId,
+            logContent,
+          );
+        }
       } catch {
         // Sandbox may not be reachable
       }

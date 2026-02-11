@@ -2,6 +2,8 @@ import { Hono } from "hono";
 import { getSandbox } from "@cloudflare/sandbox";
 import { createOpencode } from "@cloudflare/sandbox/opencode";
 import type { OpencodeClient } from "@opencode-ai/sdk";
+import { getMessagesFromR2 } from "../storage";
+import { getRun } from "../db";
 import type { Env } from "../types";
 
 const messages = new Hono<{ Bindings: Env }>();
@@ -15,45 +17,60 @@ messages.get("/", async (c) => {
 
   const sandbox = getSandbox(c.env.Sandbox, id);
 
-  // Read session metadata written by startScreenshotJob
-  let sessionId: string;
-  let directory: string;
+  // Try the live sandbox first
   try {
-    const file = await sandbox.readFile("/workspace/opencode-session.json");
-    const meta = JSON.parse(file.content as string);
-    sessionId = meta.sessionId;
-    directory = meta.directory;
-  } catch {
-    // Session file doesn't exist yet -- still in setup phase
-    return c.json({ messages: [], status: null });
-  }
-
-  // Connect to the already-running OpenCode server (reuses existing process)
-  const { client, server } = await createOpencode<OpencodeClient>(sandbox, {
-    directory,
-  });
-
-  try {
-    const [msgsResult, statusResult] = await Promise.all([
-      client.session.messages({
-        path: { id: sessionId },
-        query: { directory },
-      }),
-      client.session.status({
-        query: { directory },
-      }),
+    // Read session metadata written by startScreenshotJob
+    const file = await Promise.race([
+      sandbox.readFile("/workspace/opencode-session.json"),
+      new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error("read timeout")), 5_000),
+      ),
     ]);
+    const meta = JSON.parse(file.content as string);
+    const sessionId: string = meta.sessionId;
+    const directory: string = meta.directory;
 
-    const msgs = msgsResult.data ?? [];
-    const statuses = statusResult.data as
-      | Record<string, { type: string }>
-      | undefined;
-    const sessionStatus = statuses?.[sessionId] ?? null;
+    // Connect to the already-running OpenCode server (reuses existing process)
+    const { client, server } = await createOpencode<OpencodeClient>(sandbox, {
+      directory,
+    });
 
-    return c.json({ messages: msgs, status: sessionStatus });
-  } finally {
-    await server.close();
+    try {
+      const [msgsResult, statusResult] = await Promise.all([
+        client.session.messages({
+          path: { id: sessionId },
+          query: { directory },
+        }),
+        client.session.status({
+          query: { directory },
+        }),
+      ]);
+
+      const msgs = msgsResult.data ?? [];
+      const statuses = statusResult.data as
+        | Record<string, { type: string }>
+        | undefined;
+      const sessionStatus = statuses?.[sessionId] ?? null;
+
+      return c.json({ messages: msgs, status: sessionStatus });
+    } finally {
+      await server.close();
+    }
+  } catch {
+    // Sandbox not reachable -- fall back to R2
   }
+
+  // Look up owner/repo from the run record
+  const run = await getRun(c.env.DB, id);
+  if (!run) return c.json({ messages: [], status: null });
+
+  // Fall back to persisted messages in R2
+  const persisted = await getMessagesFromR2(c.env, run.owner, run.repo, id);
+  if (persisted) {
+    return c.json({ messages: persisted, status: null });
+  }
+
+  return c.json({ messages: [], status: null });
 });
 
 export { messages };

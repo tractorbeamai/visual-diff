@@ -10,6 +10,7 @@ import type { Sandbox as SandboxDO } from "@cloudflare/sandbox";
 export interface Env extends Omit<Cloudflare.Env, "Sandbox"> {
   Sandbox: DurableObjectNamespace<SandboxDO>;
   DB: D1Database;
+  LOGS: R2Bucket;
   // Secrets
   GITHUB_APP_ID: string;
   GITHUB_APP_PRIVATE_KEY: string;

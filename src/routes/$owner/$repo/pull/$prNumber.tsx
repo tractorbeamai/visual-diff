@@ -15,8 +15,8 @@ import {
   IconBox,
   IconBrain,
   IconGitPullRequest,
-  IconRefresh,
   IconSkull,
+  IconExternalLink,
 } from "@tabler/icons-react";
 import {
   useRuns,
@@ -78,46 +78,36 @@ function PRViewer() {
   const agentBusy = agentStatus?.type === "busy";
 
   // Refs for auto-scroll
-  const logsRef = useRef<HTMLDivElement>(null);
-  const messagesRef = useRef<HTMLDivElement>(null);
-  const autoScrollLogsRef = useRef(true);
-  const autoScrollMessagesRef = useRef(true);
-  const prevLinesLenRef = useRef(0);
-  const prevMsgsLenRef = useRef(0);
+  const timelineRef = useRef<HTMLDivElement>(null);
+  const autoScrollRef = useRef(true);
+  const prevContentLenRef = useRef(0);
 
-  // Auto-scroll logs panel when new lines arrive
+  const contentLen = lines.length + agentMessages.length;
   useEffect(() => {
-    if (lines.length > prevLinesLenRef.current) {
-      if (autoScrollLogsRef.current && logsRef.current) {
-        logsRef.current.scrollTop = logsRef.current.scrollHeight;
+    if (contentLen > prevContentLenRef.current) {
+      if (autoScrollRef.current && timelineRef.current) {
+        timelineRef.current.scrollTop = timelineRef.current.scrollHeight;
       }
     }
-    prevLinesLenRef.current = lines.length;
-  }, [lines.length]);
+    prevContentLenRef.current = contentLen;
+  }, [contentLen]);
 
-  // Auto-scroll messages panel
-  useEffect(() => {
-    if (agentMessages.length > prevMsgsLenRef.current) {
-      if (autoScrollMessagesRef.current && messagesRef.current) {
-        messagesRef.current.scrollTop = messagesRef.current.scrollHeight;
-      }
-    }
-    prevMsgsLenRef.current = agentMessages.length;
-  }, [agentMessages.length]);
-
-  function handleLogsScroll() {
-    if (!logsRef.current) return;
-    const el = logsRef.current;
-    autoScrollLogsRef.current =
+  function handleTimelineScroll() {
+    if (!timelineRef.current) return;
+    const el = timelineRef.current;
+    autoScrollRef.current =
       el.scrollHeight - el.scrollTop - el.clientHeight < 40;
   }
 
-  function handleMessagesScroll() {
-    if (!messagesRef.current) return;
-    const el = messagesRef.current;
-    autoScrollMessagesRef.current =
-      el.scrollHeight - el.scrollTop - el.clientHeight < 40;
-  }
+  // Split logs into start/end phases using markers
+  const agentStartIdx = lines.findIndex((l) =>
+    l.includes("--- AGENT_START ---"),
+  );
+  const agentEndIdx = lines.findIndex((l) => l.includes("--- AGENT_END ---"));
+  const agentStarted = agentStartIdx >= 0;
+  const agentEnded = agentEndIdx >= 0;
+  const startLogs = agentStarted ? lines.slice(0, agentStartIdx) : lines;
+  const endLogs = agentEnded ? lines.slice(agentEndIdx + 1) : [];
 
   function handleStart() {
     startRun.mutate(undefined, {
@@ -127,38 +117,77 @@ function PRViewer() {
     });
   }
 
+  const activeRuns = runs.filter(
+    (r) => r.status === "queued" || r.status === "running",
+  );
+  const latestCommit = runs.length > 0 ? runs[0].commit_sha : null;
+  const ghUrl = `https://github.com/${owner}/${repo}/pull/${prNumber}`;
+
   return (
     <div className="flex h-screen flex-col overflow-hidden bg-gray-950 font-sans antialiased text-gray-300">
-      <header className="flex items-center gap-3 border-b border-gray-800 px-6 py-4">
-        <h1 className="text-sm font-semibold text-white">
-          {owner}/{repo}
-        </h1>
-        <span className="rounded-full bg-blue-600 px-2.5 py-0.5 text-xs font-medium text-white">
-          PR #{prNumber}
-        </span>
-        {sandboxId && (
-          <span className="font-mono text-xs text-gray-600">
-            {sandboxId.slice(0, 8)}
+      <header className="border-b border-gray-800 px-6 py-4">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-4">
+            <div className="flex items-center gap-2">
+              <IconGitPullRequest size={20} className="text-green-400" />
+              <h1 className="text-base font-semibold text-white">
+                {owner}/{repo} #{prNumber}
+              </h1>
+            </div>
+            <a
+              href={ghUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center gap-1 text-xs text-gray-500 transition-colors hover:text-gray-300"
+            >
+              <IconExternalLink size={12} />
+              GitHub
+            </a>
+          </div>
+          <div className="flex items-center gap-3">
+            <StatusBadge agentBusy={agentBusy} hasLogs={lines.length > 0} />
+            <button
+              onClick={handleStart}
+              disabled={startRun.isPending}
+              className="flex items-center gap-1.5 rounded-md border border-blue-500 bg-blue-600 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {startRun.isPending ? (
+                <IconLoader2 size={14} className="animate-spin" />
+              ) : (
+                <IconPlayerPlay size={14} />
+              )}
+              {startRun.isPending ? "Starting..." : "New run"}
+            </button>
+          </div>
+        </div>
+        <div className="mt-2 flex items-center gap-4 text-xs text-gray-500">
+          {latestCommit && (
+            <span>
+              Latest commit:{" "}
+              <a
+                href={`https://github.com/${owner}/${repo}/commit/${latestCommit}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="font-mono text-gray-400 hover:text-gray-200"
+              >
+                {latestCommit.slice(0, 7)}
+              </a>
+            </span>
+          )}
+          <span>
+            {runs.length} run{runs.length !== 1 ? "s" : ""}
           </span>
-        )}
-        <div className="ml-auto flex items-center gap-3">
-          <button
-            onClick={handleStart}
-            disabled={startRun.isPending}
-            className="flex items-center gap-1.5 rounded-md border border-blue-500 bg-blue-600 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            {startRun.isPending ? (
-              <IconLoader2 size={14} className="animate-spin" />
-            ) : (
-              <IconPlayerPlay size={14} />
-            )}
-            {startRun.isPending
-              ? "Starting..."
-              : sandboxId
-                ? "Restart run"
-                : "Start run"}
-          </button>
-          <StatusBadge agentBusy={agentBusy} hasLogs={lines.length > 0} />
+          {activeRuns.length > 0 && (
+            <span className="text-amber-400">{activeRuns.length} active</span>
+          )}
+          {sandboxId && (
+            <span>
+              Viewing:{" "}
+              <span className="font-mono text-gray-400">
+                {sandboxId.slice(0, 8)}
+              </span>
+            </span>
+          )}
         </div>
       </header>
 
@@ -175,59 +204,52 @@ function PRViewer() {
         killingAll={killAll.isPending}
       />
 
-      <div className="grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)_minmax(0,2fr)] overflow-hidden">
-        {/* Left: Setup logs */}
-        <div
-          ref={logsRef}
-          onScroll={handleLogsScroll}
-          className="overflow-y-auto border-r border-gray-800 px-4 py-4"
-        >
-          <h2 className="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-500">
-            Logs
-          </h2>
-          {lines.length === 0 ? (
-            <div className="text-xs text-gray-600">No logs yet.</div>
-          ) : (
-            <div className="space-y-0.5 font-mono text-[12px] leading-relaxed">
-              {lines.map((line, i) => (
-                <SetupLogEntry key={i} raw={line} />
-              ))}
-            </div>
-          )}
-        </div>
+      <div
+        ref={timelineRef}
+        onScroll={handleTimelineScroll}
+        className="min-h-0 flex-1 overflow-y-auto px-6 py-4"
+      >
+        {lines.length === 0 && agentMessages.length === 0 && (
+          <div className="text-gray-600">Click "New run" to begin.</div>
+        )}
 
-        {/* Right: Agent messages */}
-        <div
-          ref={messagesRef}
-          onScroll={handleMessagesScroll}
-          className="overflow-y-auto px-4 py-4"
-        >
-          <h2 className="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-500">
-            Agent
-          </h2>
-          {agentMessages.length === 0 && lines.length === 0 && (
-            <div className="text-gray-600">Click "Start run" to begin.</div>
-          )}
-          {agentMessages.length === 0 &&
-            lines.length > 0 &&
-            !agentBusy &&
-            agentStatus === null && (
-              <div className="text-sm text-gray-500">
-                Waiting for agent to start...
-              </div>
-            )}
+        {startLogs.length > 0 && (
+          <div className="space-y-0.5 font-mono text-[12px] leading-relaxed">
+            {startLogs.map((line, i) => (
+              <SetupLogEntry key={`s-${i}`} raw={line} />
+            ))}
+          </div>
+        )}
+
+        {agentStarted && <SectionDivider label="Agent" />}
+
+        {agentMessages.length === 0 && agentStarted && !agentEnded && (
+          <div className="text-sm text-gray-500">
+            Waiting for agent messages...
+          </div>
+        )}
+
+        {agentMessages.length > 0 && (
           <div className="space-y-1">
             {agentMessages.map((msg) => (
               <MessageParts key={msg.info.id} message={msg} />
             ))}
           </div>
+        )}
 
-          {agentBusy && (
-            <div className="mt-3 text-sm text-amber-400">
-              Agent is working...
-            </div>
-          )}
-        </div>
+        {agentBusy && (
+          <div className="mt-3 text-sm text-amber-400">Agent is working...</div>
+        )}
+
+        {agentEnded && <SectionDivider label="Results" />}
+
+        {endLogs.length > 0 && (
+          <div className="space-y-0.5 font-mono text-[12px] leading-relaxed">
+            {endLogs.map((line, i) => (
+              <SetupLogEntry key={`e-${i}`} raw={line} />
+            ))}
+          </div>
+        )}
       </div>
     </div>
   );
@@ -297,6 +319,22 @@ function SetupLogEntry({ raw }: { raw: string }) {
   return (
     <div className="flex gap-3">
       <span className="text-gray-500">{raw}</span>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Section divider
+// ---------------------------------------------------------------------------
+
+function SectionDivider({ label }: { label: string }) {
+  return (
+    <div className="flex items-center gap-3 py-3">
+      <div className="h-px flex-1 bg-gray-800" />
+      <span className="text-[10px] font-semibold uppercase tracking-widest text-gray-600">
+        {label}
+      </span>
+      <div className="h-px flex-1 bg-gray-800" />
     </div>
   );
 }
@@ -451,21 +489,16 @@ function RunsPanel({
             onClick={onKillAll}
             disabled={killingAll}
             className="ml-auto flex items-center gap-1 rounded border border-red-900/50 px-2 py-0.5 text-[10px] font-medium text-red-400 transition-colors hover:border-red-700 hover:bg-red-950/40 disabled:opacity-50"
-            title="Kill all active runs"
+            title="Cancel all active runs"
           >
             {killingAll ? (
               <IconLoader2 size={12} className="animate-spin" />
             ) : (
               <IconSkull size={12} />
             )}
-            Kill all
+            Cancel all
           </button>
         )}
-        <span
-          className={`${hasActive ? "" : "ml-auto "}text-gray-600 transition-colors hover:text-gray-400`}
-        >
-          <IconRefresh size={14} />
-        </span>
       </div>
       <div className="flex flex-wrap gap-2">
         {runs.map((run) => {
@@ -518,7 +551,7 @@ function RunsPanel({
                   }}
                   disabled={isKilling}
                   className="ml-1 rounded p-1 text-gray-600 transition-colors hover:bg-red-950/60 hover:text-red-400 disabled:opacity-50"
-                  title="Kill run"
+                  title="Cancel run"
                 >
                   {isKilling ? (
                     <IconLoader2 size={14} className="animate-spin" />

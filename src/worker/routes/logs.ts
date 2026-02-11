@@ -1,5 +1,7 @@
 import { Hono } from "hono";
 import { getSandbox } from "@cloudflare/sandbox";
+import { getLogsFromR2 } from "../storage";
+import { getRun } from "../db";
 import type { Env } from "../types";
 
 const logs = new Hono<{ Bindings: Env }>();
@@ -13,6 +15,7 @@ logs.get("/", async (c) => {
 
   const sandbox = getSandbox(c.env.Sandbox, id);
 
+  // Try the live sandbox first
   try {
     const result = await Promise.race([
       sandbox.exec("cat /workspace/agent.log 2>/dev/null || true"),
@@ -25,9 +28,21 @@ logs.get("/", async (c) => {
 
     return c.json({ lines });
   } catch {
-    // Sandbox not reachable yet -- return empty
-    return c.json({ lines: [] });
+    // Sandbox not reachable -- fall back to R2
   }
+
+  // Look up owner/repo from the run record
+  const run = await getRun(c.env.DB, id);
+  if (!run) return c.json({ lines: [] });
+
+  // Fall back to persisted logs in R2
+  const persisted = await getLogsFromR2(c.env, run.owner, run.repo, id);
+  if (persisted) {
+    const lines = persisted.split("\n").filter(Boolean);
+    return c.json({ lines });
+  }
+
+  return c.json({ lines: [] });
 });
 
 export { logs };

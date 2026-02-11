@@ -6,30 +6,79 @@ const R2_PUBLIC_DOMAIN = "screenshots.tractorbeam.ai";
 // Log persistence (R2)
 // ---------------------------------------------------------------------------
 
+/** R2 key prefix for a run: {owner}/{repo}/{sandboxId} */
+function runPrefix(owner: string, repo: string, sandboxId: string): string {
+  return `${owner}/${repo}/${sandboxId}`;
+}
+
 /** R2 key where a run's logs are stored. */
-export function logsR2Key(sandboxId: string): string {
-  return `logs/${sandboxId}/agent.log`;
+export function logsR2Key(
+  owner: string,
+  repo: string,
+  sandboxId: string,
+): string {
+  return `${runPrefix(owner, repo, sandboxId)}/agent.log`;
+}
+
+/** R2 key where a run's agent messages are stored. */
+export function messagesR2Key(
+  owner: string,
+  repo: string,
+  sandboxId: string,
+): string {
+  return `${runPrefix(owner, repo, sandboxId)}/messages.json`;
 }
 
 /** Upload the current agent.log contents to R2. */
 export async function syncLogsToR2(
   env: Env,
+  owner: string,
+  repo: string,
   sandboxId: string,
   content: string,
 ): Promise<void> {
-  await env.SCREENSHOTS.put(logsR2Key(sandboxId), content, {
+  await env.LOGS.put(logsR2Key(owner, repo, sandboxId), content, {
     httpMetadata: { contentType: "text/plain" },
   });
+}
+
+/** Upload the current agent messages to R2. */
+export async function syncMessagesToR2(
+  env: Env,
+  owner: string,
+  repo: string,
+  sandboxId: string,
+  messages: unknown[],
+): Promise<void> {
+  await env.LOGS.put(
+    messagesR2Key(owner, repo, sandboxId),
+    JSON.stringify(messages),
+    { httpMetadata: { contentType: "application/json" } },
+  );
 }
 
 /** Read logs from R2. Returns null if not found. */
 export async function getLogsFromR2(
   env: Env,
+  owner: string,
+  repo: string,
   sandboxId: string,
 ): Promise<string | null> {
-  const obj = await env.SCREENSHOTS.get(logsR2Key(sandboxId));
+  const obj = await env.LOGS.get(logsR2Key(owner, repo, sandboxId));
   if (!obj) return null;
   return obj.text();
+}
+
+/** Read persisted messages from R2. Returns null if not found. */
+export async function getMessagesFromR2(
+  env: Env,
+  owner: string,
+  repo: string,
+  sandboxId: string,
+): Promise<unknown[] | null> {
+  const obj = await env.LOGS.get(messagesR2Key(owner, repo, sandboxId));
+  if (!obj) return null;
+  return obj.json();
 }
 
 /**
@@ -42,11 +91,11 @@ export function buildR2Key(
   prNumber: number,
   route: string,
 ): string {
-  const slug = route
-    .replace(/^\//, "")
-    .replace(/\//g, "-")
-    .replace(/[^a-zA-Z0-9-]/g, "")
-    || "index";
+  const slug =
+    route
+      .replace(/^\//, "")
+      .replace(/\//g, "-")
+      .replace(/[^a-zA-Z0-9-]/g, "") || "index";
   return `${owner}/${repo}/pr-${prNumber}/${slug}.png`;
 }
 

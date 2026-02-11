@@ -63,6 +63,16 @@ export async function registerRun(
 }
 
 /**
+ * Look up a single run by ID. Returns null if not found.
+ */
+export async function getRun(
+  db: D1Database,
+  runId: string,
+): Promise<Run | null> {
+  return db.prepare(`SELECT * FROM runs WHERE id = ?`).bind(runId).first<Run>();
+}
+
+/**
  * Check if a run is still the active one (not cancelled/superseded).
  */
 export async function isRunActive(

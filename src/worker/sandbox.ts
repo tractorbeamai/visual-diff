@@ -16,6 +16,7 @@ import {
   uploadScreenshot,
   buildCommentMarkdown,
   syncLogsToR2,
+  syncMessagesToR2,
 } from "./storage";
 import { createOctokit, getInstallationToken, postPRComment } from "./github";
 import { isRunActive, updateRunStatus } from "./db";
@@ -226,12 +227,36 @@ export async function startScreenshotJob(
       );
       const content = result.stdout ?? "";
       if (content.trim()) {
-        await syncLogsToR2(env, job.sandboxId, content);
+        await syncLogsToR2(env, job.owner, job.repo, job.sandboxId, content);
       }
     } catch {
       // Sandbox may be gone already
     }
   };
+
+  // Helper: fetch agent messages from OpenCode and persist to R2
+  const flushMessages = async () => {
+    try {
+      const { data: msgs } = await client.session.messages({
+        path: { id: sessionId },
+        query: { directory },
+      });
+      if (msgs && (msgs as unknown[]).length > 0) {
+        await syncMessagesToR2(
+          env,
+          job.owner,
+          job.repo,
+          job.sandboxId,
+          msgs as unknown[],
+        );
+      }
+    } catch {
+      // OpenCode server may be gone already
+    }
+  };
+
+  await log("--- AGENT_START ---");
+  await flushLogs();
 
   // ── Cleanup closure ─────────────────────────────────────────────────────
   // The caller runs this via ctx.waitUntil() after ack'ing the queue message,
@@ -313,12 +338,14 @@ export async function startScreenshotJob(
           break;
         }
 
-        // Log elapsed time every ~60s
-        if (pollCount % 20 === 0) {
-          const elapsed = Math.round((pollCount * 3) / 60);
-          await log(`Still working... (${elapsed}m elapsed)`);
+        // Sync logs + messages to R2 every ~30s
+        if (pollCount % 10 === 0) {
+          await Promise.all([flushLogs(), flushMessages()]);
         }
       }
+
+      await log("--- AGENT_END ---");
+      await Promise.all([flushLogs(), flushMessages()]);
 
       if (!manifestFound) {
         await log("ERROR: Agent timed out after 10 minutes.");
@@ -407,6 +434,8 @@ export async function startScreenshotJob(
       }
       throw err;
     } finally {
+      // Final sync before tearing down the sandbox
+      await Promise.all([flushLogs(), flushMessages()]);
       try {
         await server.close();
       } catch {
