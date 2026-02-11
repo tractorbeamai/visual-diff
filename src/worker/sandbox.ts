@@ -125,7 +125,7 @@ export async function startScreenshotJob(
     screenshotSecret: env.INTERNAL_SECRET,
   });
 
-  const directory = "/workspace/repo";
+  const directory = "/workspace";
 
   // Start OpenCode server and get a typed SDK client
   await log("Starting OpenCode agent...");
