@@ -11,7 +11,12 @@ import type {
   UploadedScreenshot,
 } from "./types";
 import { buildSystemPrompt } from "./prompt";
-import { buildR2Key, uploadScreenshot, buildCommentMarkdown } from "./storage";
+import {
+  buildR2Key,
+  uploadScreenshot,
+  buildCommentMarkdown,
+  syncLogsToR2,
+} from "./storage";
 import { createOctokit, getInstallationToken, postPRComment } from "./github";
 import { isRunActive, updateRunStatus } from "./db";
 
@@ -212,6 +217,21 @@ export async function startScreenshotJob(
   }
 
   await log("Agent is working...");
+
+  // Helper: read agent.log from sandbox and persist to R2
+  const flushLogs = async () => {
+    try {
+      const result = await sandbox.exec(
+        "cat /workspace/agent.log 2>/dev/null || true",
+      );
+      const content = result.stdout ?? "";
+      if (content.trim()) {
+        await syncLogsToR2(env, job.sandboxId, content);
+      }
+    } catch {
+      // Sandbox may be gone already
+    }
+  };
 
   // ── Cleanup closure ─────────────────────────────────────────────────────
   // The caller runs this via ctx.waitUntil() after ack'ing the queue message,

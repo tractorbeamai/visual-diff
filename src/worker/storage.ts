@@ -2,6 +2,36 @@ import type { Env, UploadedScreenshot } from "./types";
 
 const R2_PUBLIC_DOMAIN = "screenshots.tractorbeam.ai";
 
+// ---------------------------------------------------------------------------
+// Log persistence (R2)
+// ---------------------------------------------------------------------------
+
+/** R2 key where a run's logs are stored. */
+export function logsR2Key(sandboxId: string): string {
+  return `logs/${sandboxId}/agent.log`;
+}
+
+/** Upload the current agent.log contents to R2. */
+export async function syncLogsToR2(
+  env: Env,
+  sandboxId: string,
+  content: string,
+): Promise<void> {
+  await env.SCREENSHOTS.put(logsR2Key(sandboxId), content, {
+    httpMetadata: { contentType: "text/plain" },
+  });
+}
+
+/** Read logs from R2. Returns null if not found. */
+export async function getLogsFromR2(
+  env: Env,
+  sandboxId: string,
+): Promise<string | null> {
+  const obj = await env.SCREENSHOTS.get(logsR2Key(sandboxId));
+  if (!obj) return null;
+  return obj.text();
+}
+
 /**
  * Build the R2 object key for a screenshot.
  * Format: {owner}/{repo}/pr-{number}/{route-slug}.png

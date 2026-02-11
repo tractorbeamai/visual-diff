@@ -51,24 +51,24 @@ runs.post("/kill", async (c) => {
     }
   }
 
-  // Kill raw Durable Objects by hex ID
+  // Kill raw Durable Objects by hex ID -- use RPC destroy(), not fetch
   if (body.durableObjects) {
     const ns = c.env.Sandbox;
-    for (const id of body.durableObjects) {
-      try {
-        const stub = ns.get(ns.idFromString(id));
-        await stub.fetch(
-          new Request("https://sandbox/destroy", { method: "POST" }),
-        );
-        results.push({ id, type: "durable_object", status: "destroyed" });
-      } catch (e) {
-        results.push({
-          id,
-          type: "durable_object",
-          status: e instanceof Error ? e.message : String(e),
-        });
-      }
-    }
+    await Promise.allSettled(
+      body.durableObjects.map(async (id) => {
+        try {
+          const stub = ns.get(ns.idFromString(id));
+          await stub.destroy();
+          results.push({ id, type: "durable_object", status: "destroyed" });
+        } catch (e) {
+          results.push({
+            id,
+            type: "durable_object",
+            status: e instanceof Error ? e.message : String(e),
+          });
+        }
+      }),
+    );
   }
 
   // Kill all active runs in D1
