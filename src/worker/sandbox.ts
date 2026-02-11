@@ -77,8 +77,10 @@ export async function startScreenshotJob(
   await log("Fetching installation token...");
   const token = await getInstallationToken(env, job.installationId);
 
-  // Clone the repo and check out the PR head commit
+  // Clone the repo and check out the PR head commit.
+  // Clean up first in case this is a retry on the same sandbox.
   await log("Cloning repository...");
+  await sandbox.exec("rm -rf /workspace/repo");
   await sandbox.gitCheckout(
     `https://x-access-token:${token}@github.com/${job.owner}/${job.repo}.git`,
     { targetDir: "repo" },
@@ -172,6 +174,12 @@ export async function startScreenshotJob(
   const sessionId = session.data.id;
   await log(`Session created: ${sessionId}`);
 
+  // Persist session metadata so the /messages endpoint can find the session
+  await sandbox.writeFile(
+    "/workspace/opencode-session.json",
+    JSON.stringify({ sessionId, directory }),
+  );
+
   await log("Sending prompt (async)...");
 
   // Use promptAsync so the HTTP call returns immediately (204) and the agent
@@ -209,12 +217,13 @@ export async function startScreenshotJob(
   // so the 10-minute polling loop doesn't block subsequent jobs.
   return async () => {
     try {
-      // Poll for manifest + session status + messages every 3s
+      // Poll for manifest + session status every 3s.
+      // Message progress is now served by the /messages endpoint; the
+      // cleanup closure only needs to detect completion.
       const deadline = Date.now() + 600_000;
       let manifestFound = false;
       let agentDone = false;
       let pollCount = 0;
-      let lastMsgCount = 0;
 
       while (Date.now() < deadline) {
         await new Promise((r) => setTimeout(r, 3_000));
@@ -244,23 +253,6 @@ export async function startScreenshotJob(
             if (status?.type === "idle" && pollCount > 1) {
               agentDone = true;
             }
-          }
-        } catch {
-          // Non-critical
-        }
-
-        // Poll session messages for real-time progress
-        try {
-          const { data: msgs } = await client.session.messages({
-            path: { id: sessionId },
-            query: { directory },
-          });
-          const items = Array.isArray(msgs) ? msgs : [];
-          if (items.length !== lastMsgCount) {
-            for (const m of items.slice(lastMsgCount)) {
-              await logMessage(m, log);
-            }
-            lastMsgCount = items.length;
           }
         } catch {
           // Non-critical
@@ -395,76 +387,4 @@ export async function startScreenshotJob(
       }
     }
   };
-}
-
-// ---------------------------------------------------------------------------
-// Message formatting
-// ---------------------------------------------------------------------------
-
-/**
- * Log a single OpenCode message (user or assistant) in a human-readable way.
- * Each message has `info` (metadata) and `parts` (content).
- */
-async function logMessage(
-  msg: Record<string, unknown>,
-  log: (s: string) => Promise<void>,
-) {
-  const info = (msg.info ?? msg) as Record<string, unknown>;
-  const role = String(info.role ?? "unknown");
-  const parts = Array.isArray(msg.parts) ? msg.parts : [];
-
-  // Header: role + model (if assistant)
-  const model = info.modelID ? ` (${info.modelID})` : "";
-  const tokens = info.tokens as Record<string, unknown> | undefined;
-  const cache = tokens?.cache as Record<string, number> | undefined;
-  const tokenStr = tokens
-    ? ` [in:${tokens.input ?? 0} out:${tokens.output ?? 0} cache-read:${cache?.read ?? 0}]`
-    : "";
-  await log(`--- ${role}${model}${tokenStr} ---`);
-
-  for (const part of parts) {
-    const p = part as Record<string, unknown>;
-    const type = String(p.type ?? "unknown");
-
-    switch (type) {
-      case "text":
-        await log(String(p.text ?? ""));
-        break;
-
-      case "tool-invocation": {
-        const name = String(p.toolName ?? p.name ?? "tool");
-        const state = p.state ? ` [${p.state}]` : "";
-        await log(`[tool: ${name}${state}]`);
-        if (p.args) {
-          const args =
-            typeof p.args === "string"
-              ? p.args
-              : JSON.stringify(p.args, null, 2);
-          await log(`  args: ${args}`);
-        }
-        if (p.result) {
-          const result =
-            typeof p.result === "string" ? p.result : JSON.stringify(p.result);
-          // Trim very long tool results but don't truncate arbitrarily
-          const lines = result.split("\n");
-          if (lines.length > 30) {
-            await log(
-              `  result: (${lines.length} lines)\n${lines.slice(0, 15).join("\n")}\n  ... (${lines.length - 30} lines omitted) ...\n${lines.slice(-15).join("\n")}`,
-            );
-          } else {
-            await log(`  result: ${result}`);
-          }
-        }
-        break;
-      }
-
-      case "step-start":
-        await log("[step]");
-        break;
-
-      default:
-        await log(`[${type}] ${JSON.stringify(p)}`);
-        break;
-    }
-  }
 }

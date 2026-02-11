@@ -7,6 +7,7 @@ import { handleQueue } from "./queue";
 import { webhook } from "./routes/webhook";
 import { start } from "./routes/start";
 import { stream } from "./routes/stream";
+import { messages } from "./routes/messages";
 import type { Env } from "./types";
 
 // ─── Hono App ─────────────────────────────────────────────────────────────────
@@ -46,6 +47,7 @@ app.all("/cdp", (c) => handleCDP(c.req.raw, c.env));
 app.route("/webhook", webhook);
 app.route("/start", start);
 app.route("/stream", stream);
+app.route("/messages", messages);
 
 // Health check
 app.get("/health", (c) => c.json({ status: "ok", service: "visual-diff" }));
