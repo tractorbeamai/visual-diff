@@ -95,6 +95,64 @@ export async function updateRunStatus(
 }
 
 /**
+ * Force-kill a run: mark it failed in D1 and destroy its sandbox DO.
+ * Returns true if a run was found and updated.
+ */
+export async function killRun(env: Env, runId: string): Promise<boolean> {
+  const row = await env.DB.prepare(`SELECT status FROM runs WHERE id = ?`)
+    .bind(runId)
+    .first<{ status: string }>();
+
+  if (!row) return false;
+
+  // Update status to failed (even if already terminal -- force it)
+  await env.DB.prepare(
+    `UPDATE runs SET status = 'failed', updated_at = datetime('now') WHERE id = ?`,
+  )
+    .bind(runId)
+    .run();
+
+  // Best-effort destroy the sandbox DO
+  try {
+    const sandbox = getSandbox(env.Sandbox, runId);
+    await sandbox.destroy();
+    console.log(`Sandbox ${runId.slice(0, 8)} destroyed via kill`);
+  } catch {
+    // Sandbox may already be gone
+  }
+
+  return true;
+}
+
+/**
+ * Kill all queued/running runs: mark them failed and destroy their sandboxes.
+ * Returns the number of runs killed.
+ */
+export async function killAllActiveRuns(env: Env): Promise<number> {
+  const { results } = await env.DB.prepare(
+    `SELECT id FROM runs WHERE status IN ('queued', 'running')`,
+  ).all<{ id: string }>();
+
+  for (const row of results) {
+    await env.DB.prepare(
+      `UPDATE runs SET status = 'failed', updated_at = datetime('now') WHERE id = ?`,
+    )
+      .bind(row.id)
+      .run();
+
+    try {
+      const sandbox = getSandbox(env.Sandbox, row.id);
+      await sandbox.destroy();
+      console.log(`Sandbox ${row.id.slice(0, 8)} destroyed via kill-all`);
+    } catch {
+      // Sandbox may already be gone
+    }
+  }
+
+  return results.length;
+}
+
+/**
  * List runs, optionally filtered by owner/repo/PR.
  */
 export async function listRuns(

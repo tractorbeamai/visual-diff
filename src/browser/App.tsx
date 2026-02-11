@@ -17,6 +17,7 @@ import {
   IconBrain,
   IconGitPullRequest,
   IconRefresh,
+  IconSkull,
 } from "@tabler/icons-react";
 
 // ---------------------------------------------------------------------------
@@ -598,6 +599,8 @@ function RunsPanel({
 }) {
   const [runs, setRuns] = useState<Run[]>([]);
   const [loading, setLoading] = useState(true);
+  const [killingIds, setKillingIds] = useState<Set<string>>(new Set());
+  const [killingAll, setKillingAll] = useState(false);
 
   const fetchRuns = useCallback(async () => {
     try {
@@ -614,6 +617,41 @@ function RunsPanel({
       setLoading(false);
     }
   }, [owner, repo, prNumber]);
+
+  const handleKill = useCallback(
+    async (runId: string) => {
+      setKillingIds((prev) => new Set(prev).add(runId));
+      try {
+        await fetch("/runs/kill", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ runs: [runId] }),
+        });
+        await fetchRuns();
+      } finally {
+        setKillingIds((prev) => {
+          const next = new Set(prev);
+          next.delete(runId);
+          return next;
+        });
+      }
+    },
+    [fetchRuns],
+  );
+
+  const handleKillAll = useCallback(async () => {
+    setKillingAll(true);
+    try {
+      await fetch("/runs/kill", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ all: true }),
+      });
+      await fetchRuns();
+    } finally {
+      setKillingAll(false);
+    }
+  }, [fetchRuns]);
 
   useEffect(() => {
     fetchRuns();
@@ -641,9 +679,24 @@ function RunsPanel({
         <h2 className="text-xs font-semibold uppercase tracking-wide text-gray-500">
           Runs
         </h2>
+        {runs.some((r) => r.status === "queued" || r.status === "running") && (
+          <button
+            onClick={handleKillAll}
+            disabled={killingAll}
+            className="ml-auto flex items-center gap-1 rounded border border-red-900/50 px-2 py-0.5 text-[10px] font-medium text-red-400 transition-colors hover:border-red-700 hover:bg-red-950/40 disabled:opacity-50"
+            title="Kill all active runs"
+          >
+            {killingAll ? (
+              <IconLoader2 size={12} className="animate-spin" />
+            ) : (
+              <IconSkull size={12} />
+            )}
+            Kill all
+          </button>
+        )}
         <button
           onClick={fetchRuns}
-          className="ml-auto text-gray-600 transition-colors hover:text-gray-400"
+          className={`${runs.some((r) => r.status === "queued" || r.status === "running") ? "" : "ml-auto "}text-gray-600 transition-colors hover:text-gray-400`}
           title="Refresh"
         >
           <IconRefresh size={14} />
@@ -652,40 +705,64 @@ function RunsPanel({
       <div className="flex flex-wrap gap-2">
         {runs.map((run) => {
           const isActive = run.id === activeSandboxId;
+          const isKillable =
+            run.status === "queued" || run.status === "running";
+          const isKilling = killingIds.has(run.id);
           return (
-            <button
+            <div
               key={run.id}
-              onClick={() => onSelectRun(run.id)}
-              className={`group flex items-center gap-2 rounded-lg border px-3 py-2 text-left text-xs transition-all ${
+              className={`group flex items-center gap-2 rounded-lg border px-3 py-2 text-xs transition-all ${
                 isActive
                   ? "border-blue-500/40 bg-blue-950/30"
                   : "border-gray-800 bg-gray-900/40 hover:border-gray-700 hover:bg-gray-900/60"
               }`}
             >
-              <RunStatusIcon status={run.status} />
-              <div className="flex flex-col gap-0.5">
-                <div className="flex items-center gap-1.5">
-                  <span className="font-mono text-gray-300">
-                    {run.commit_sha.slice(0, 7)}
-                  </span>
-                  <span
-                    className={`text-[10px] font-medium ${statusColor[run.status]}`}
-                  >
-                    {statusLabel[run.status]}
-                  </span>
+              <button
+                onClick={() => onSelectRun(run.id)}
+                className="flex items-center gap-2 text-left"
+              >
+                <RunStatusIcon status={run.status} />
+                <div className="flex flex-col gap-0.5">
+                  <div className="flex items-center gap-1.5">
+                    <span className="font-mono text-gray-300">
+                      {run.commit_sha.slice(0, 7)}
+                    </span>
+                    <span
+                      className={`text-[10px] font-medium ${statusColor[run.status]}`}
+                    >
+                      {statusLabel[run.status]}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-2 text-[10px] text-gray-600">
+                    <span className="flex items-center gap-1">
+                      <IconBox size={10} />
+                      {run.id.slice(0, 8)}
+                    </span>
+                    <span className="flex items-center gap-1">
+                      <IconBrain size={10} />
+                      {timeAgo(run.created_at)}
+                    </span>
+                  </div>
                 </div>
-                <div className="flex items-center gap-2 text-[10px] text-gray-600">
-                  <span className="flex items-center gap-1">
-                    <IconBox size={10} />
-                    {run.id.slice(0, 8)}
-                  </span>
-                  <span className="flex items-center gap-1">
-                    <IconBrain size={10} />
-                    {timeAgo(run.created_at)}
-                  </span>
-                </div>
-              </div>
-            </button>
+              </button>
+              {isKillable && (
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleKill(run.id);
+                  }}
+                  disabled={isKilling}
+                  className="ml-1 rounded p-1 text-gray-600 transition-colors hover:bg-red-950/60 hover:text-red-400 disabled:opacity-50"
+                  title="Kill run"
+                >
+                  {isKilling ? (
+                    <IconLoader2 size={14} className="animate-spin" />
+                  ) : (
+                    <IconSkull size={14} />
+                  )}
+                </button>
+              )}
+            </div>
           );
         })}
       </div>

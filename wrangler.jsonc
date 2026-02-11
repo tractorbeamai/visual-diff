@@ -61,7 +61,7 @@
     "consumers": [
       {
         "queue": "visual-diff-jobs",
-        "max_retries": 2,
+        "max_retries": 0,
         "visibility_timeout_ms": 900000,
         "max_batch_timeout": 0,
       },

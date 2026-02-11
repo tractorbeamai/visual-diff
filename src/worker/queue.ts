@@ -61,11 +61,15 @@ export async function handleQueue(
       try {
         const sandbox = getSandbox(env.Sandbox, job.sandboxId);
         await sandbox.destroy();
+        console.log(
+          `Sandbox ${job.sandboxId.slice(0, 8)} destroyed after failure`,
+        );
       } catch {
         // Best effort
       }
 
-      msg.retry();
+      // No retries -- ack and move on
+      msg.ack();
     }
   }
 }
