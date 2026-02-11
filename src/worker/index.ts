@@ -6,7 +6,7 @@ import { handleCDP } from "./cdp";
 import { handleQueue } from "./queue";
 import { webhook } from "./routes/webhook";
 import { start } from "./routes/start";
-import { stream } from "./routes/stream";
+import { logs } from "./routes/logs";
 import { messages } from "./routes/messages";
 import { runs } from "./routes/runs";
 import type { Env } from "./types";
@@ -47,7 +47,7 @@ app.all("/cdp", (c) => handleCDP(c.req.raw, c.env));
 // Routes
 app.route("/webhook", webhook);
 app.route("/start", start);
-app.route("/stream", stream);
+app.route("/logs", logs);
 app.route("/messages", messages);
 app.route("/runs", runs);
 

@@ -1,10 +1,9 @@
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef } from "react";
+import { createFileRoute } from "@tanstack/react-router";
 import type {
-  Message,
   Part,
   TextPart as SdkTextPart,
   ToolPart as SdkToolPart,
-  SessionStatus,
 } from "@opencode-ai/sdk";
 import {
   IconPlayerPlay,
@@ -19,245 +18,92 @@ import {
   IconRefresh,
   IconSkull,
 } from "@tabler/icons-react";
+import {
+  useRuns,
+  useLogs,
+  useMessages,
+  useStartRun,
+  useKillRun,
+  useKillAllRuns,
+} from "../../../../browser/api";
+import type { Run, AgentMessage } from "../../../../browser/api";
 
 // ---------------------------------------------------------------------------
-// Types
+// Route definition
 // ---------------------------------------------------------------------------
 
-interface LogLine {
-  id: number;
-  raw: string;
-}
-
-type ConnectionStatus =
-  | "idle"
-  | "connected"
-  | "disconnected"
-  | "error"
-  | "ended";
-
-interface AgentMessage {
-  info: Message;
-  parts: Part[];
-}
-
-interface Run {
-  id: string;
-  owner: string;
-  repo: string;
-  pr_number: number;
-  commit_sha: string;
-  status: "queued" | "running" | "completed" | "cancelled" | "failed";
-  created_at: string;
-  updated_at: string;
-}
-
-// ---------------------------------------------------------------------------
-// Routing
-// ---------------------------------------------------------------------------
-
-function parsePRRoute(): {
-  owner: string;
-  repo: string;
-  prNumber: number;
-} | null {
-  const match = window.location.pathname.match(
-    /^\/([^/]+)\/([^/]+)\/pull\/(\d+)$/,
-  );
-  if (!match) return null;
-  return { owner: match[1], repo: match[2], prNumber: Number(match[3]) };
-}
-
-// ---------------------------------------------------------------------------
-// App
-// ---------------------------------------------------------------------------
-
-export function App() {
-  const pr = parsePRRoute();
-
-  if (!pr) {
-    return (
-      <div className="flex min-h-screen items-center justify-center bg-gray-950 text-gray-400">
-        <p className="text-sm">
-          Navigate to <code>/:owner/:repo/pull/:number</code> to view a PR.
-        </p>
-      </div>
-    );
-  }
-
-  return <PRViewer owner={pr.owner} repo={pr.repo} prNumber={pr.prNumber} />;
-}
+export const Route = createFileRoute("/$owner/$repo/pull/$prNumber")({
+  component: PRViewer,
+  parseParams: (params) => ({
+    owner: params.owner,
+    repo: params.repo,
+    prNumber: params.prNumber,
+  }),
+  validateSearch: (search: Record<string, unknown>) => ({
+    sandbox: (search.sandbox as string) || undefined,
+  }),
+});
 
 // ---------------------------------------------------------------------------
 // PRViewer
 // ---------------------------------------------------------------------------
 
-function PRViewer({
-  owner,
-  repo,
-  prNumber,
-}: {
-  owner: string;
-  repo: string;
-  prNumber: number;
-}) {
-  // Setup log state (SSE from /stream)
-  const [lines, setLines] = useState<LogLine[]>([]);
-  const [streamStatus, setStreamStatus] = useState<ConnectionStatus>("idle");
-  const [sandboxId, setSandboxId] = useState<string | null>(
-    () => window.location.hash.slice(1) || null,
-  );
-  const [starting, setStarting] = useState(false);
+function PRViewer() {
+  const { owner, repo, prNumber } = Route.useParams();
+  const { sandbox } = Route.useSearch();
+  const navigate = Route.useNavigate();
+  const pr = Number(prNumber);
 
-  // Agent messages state (polled from /messages)
-  const [agentMessages, setAgentMessages] = useState<AgentMessage[]>([]);
-  const [agentStatus, setAgentStatus] = useState<SessionStatus | null>(null);
+  const [sandboxId, setSandboxId] = useState<string | null>(sandbox ?? null);
 
+  // Sync sandboxId to URL search param
+  function selectSandbox(id: string) {
+    setSandboxId(id);
+    navigate({
+      search: { sandbox: id },
+      replace: true,
+    });
+  }
+
+  // Query hooks
+  const { data: runs = [], isLoading: runsLoading } = useRuns(owner, repo, pr);
+  const { data: lines = [] } = useLogs(sandboxId);
+  const { data: messagesData } = useMessages(sandboxId);
+  const startRun = useStartRun(owner, repo, pr);
+  const killRun = useKillRun(owner, repo, pr);
+  const killAll = useKillAllRuns(owner, repo, pr);
+
+  const agentMessages = messagesData?.messages ?? [];
+  const agentStatus = messagesData?.status ?? null;
+  const agentBusy = agentStatus?.type === "busy";
+
+  // Refs for auto-scroll
   const logsRef = useRef<HTMLDivElement>(null);
   const messagesRef = useRef<HTMLDivElement>(null);
   const autoScrollLogsRef = useRef(true);
   const autoScrollMessagesRef = useRef(true);
-  const esRef = useRef<EventSource | null>(null);
-  const lineIdRef = useRef(0);
-  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const prevLinesLenRef = useRef(0);
+  const prevMsgsLenRef = useRef(0);
 
-  const appendLine = useCallback((raw: string) => {
-    const id = lineIdRef.current++;
-    setLines((prev) => [...prev, { id, raw }]);
-  }, []);
-
-  // -- Setup log SSE connection -----------------------------------------------
-
-  const connectToStream = useCallback(
-    (id: string) => {
-      if (esRef.current) {
-        esRef.current.close();
-        esRef.current = null;
-      }
-
-      setLines([]);
-      lineIdRef.current = 0;
-
-      const es = new EventSource(`/stream?id=${encodeURIComponent(id)}`);
-      esRef.current = es;
-
-      es.onmessage = (e) => {
-        try {
-          const payload = JSON.parse(e.data);
-          if (payload.type === "stdout" && payload.data) {
-            payload.data
-              .split("\n")
-              .filter(Boolean)
-              .forEach((line: string) => appendLine(line));
-          } else if (payload.type === "stderr" && payload.data) {
-            appendLine("STDERR: " + payload.data);
-          } else if (payload.type === "complete") {
-            appendLine(
-              "Stream ended (exit code: " + (payload.exitCode ?? "?") + ")",
-            );
-            setStreamStatus("ended");
-            es.close();
-          }
-        } catch {
-          appendLine(e.data);
-        }
-      };
-
-      es.onopen = () => setStreamStatus("connected");
-
-      es.onerror = () => {
-        setStreamStatus("error");
-        es.close();
-        appendLine("Connection lost. Reconnecting in 3s...");
-        setTimeout(() => connectToStream(id), 3000);
-      };
-    },
-    [appendLine],
-  );
-
-  // -- Agent messages polling -------------------------------------------------
-
-  const startPolling = useCallback((id: string) => {
-    if (pollRef.current) clearInterval(pollRef.current);
-
-    const poll = async () => {
-      try {
-        const res = await fetch(`/messages?id=${encodeURIComponent(id)}`);
-        if (!res.ok) return;
-        const data = await res.json();
-        setAgentMessages(data.messages ?? []);
-        setAgentStatus(data.status ?? null);
-      } catch {
-        // Transient -- next poll will retry
-      }
-    };
-
-    poll();
-    pollRef.current = setInterval(poll, 500);
-  }, []);
-
-  const stopPolling = useCallback(() => {
-    if (pollRef.current) {
-      clearInterval(pollRef.current);
-      pollRef.current = null;
-    }
-  }, []);
-
-  // Stop polling when agent goes idle
+  // Auto-scroll logs panel when new lines arrive
   useEffect(() => {
-    if (agentStatus?.type === "idle" && agentMessages.length > 0) {
-      // Do one final poll then stop
-      if (sandboxId) {
-        fetch(`/messages?id=${encodeURIComponent(sandboxId)}`)
-          .then((r) => r.json())
-          .then((data) => {
-            setAgentMessages(data.messages ?? []);
-            setAgentStatus(data.status ?? null);
-          })
-          .catch(() => {});
+    if (lines.length > prevLinesLenRef.current) {
+      if (autoScrollLogsRef.current && logsRef.current) {
+        logsRef.current.scrollTop = logsRef.current.scrollHeight;
       }
-      stopPolling();
     }
-  }, [agentStatus, agentMessages.length, sandboxId, stopPolling]);
-
-  // -- Lifecycle --------------------------------------------------------------
-
-  const connectToSandbox = useCallback(
-    (id: string) => {
-      setSandboxId(id);
-      window.location.hash = id;
-      setAgentMessages([]);
-      setAgentStatus(null);
-      connectToStream(id);
-      startPolling(id);
-    },
-    [connectToStream, startPolling],
-  );
-
-  useEffect(() => {
-    if (sandboxId) {
-      connectToSandbox(sandboxId);
-    }
-    return () => {
-      esRef.current?.close();
-      stopPolling();
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  // Auto-scroll logs panel
-  useEffect(() => {
-    if (autoScrollLogsRef.current && logsRef.current) {
-      logsRef.current.scrollTop = logsRef.current.scrollHeight;
-    }
-  }, [lines]);
+    prevLinesLenRef.current = lines.length;
+  }, [lines.length]);
 
   // Auto-scroll messages panel
   useEffect(() => {
-    if (autoScrollMessagesRef.current && messagesRef.current) {
-      messagesRef.current.scrollTop = messagesRef.current.scrollHeight;
+    if (agentMessages.length > prevMsgsLenRef.current) {
+      if (autoScrollMessagesRef.current && messagesRef.current) {
+        messagesRef.current.scrollTop = messagesRef.current.scrollHeight;
+      }
     }
-  }, [agentMessages]);
+    prevMsgsLenRef.current = agentMessages.length;
+  }, [agentMessages.length]);
 
   function handleLogsScroll() {
     if (!logsRef.current) return;
@@ -273,33 +119,13 @@ function PRViewer({
       el.scrollHeight - el.scrollTop - el.clientHeight < 40;
   }
 
-  async function handleStart() {
-    setStarting(true);
-    try {
-      const res = await fetch("/start", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ owner, repo, pr: prNumber }),
-      });
-      const data = await res.json();
-
-      if (!res.ok) {
-        appendLine("ERROR: Start failed -- " + (data.error || res.statusText));
-        return;
-      }
-
-      connectToSandbox(data.sandboxId);
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      appendLine("ERROR: Start failed -- " + msg);
-    } finally {
-      setStarting(false);
-    }
+  function handleStart() {
+    startRun.mutate(undefined, {
+      onSuccess: (data) => {
+        selectSandbox(data.sandboxId);
+      },
+    });
   }
-
-  // -- Render -----------------------------------------------------------------
-
-  const agentBusy = agentStatus?.type === "busy";
 
   return (
     <div className="flex h-screen flex-col overflow-hidden bg-gray-950 font-sans antialiased text-gray-300">
@@ -318,26 +144,35 @@ function PRViewer({
         <div className="ml-auto flex items-center gap-3">
           <button
             onClick={handleStart}
-            disabled={starting}
+            disabled={startRun.isPending}
             className="flex items-center gap-1.5 rounded-md border border-blue-500 bg-blue-600 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-50"
           >
-            {starting ? (
+            {startRun.isPending ? (
               <IconLoader2 size={14} className="animate-spin" />
             ) : (
               <IconPlayerPlay size={14} />
             )}
-            {starting ? "Starting..." : sandboxId ? "Restart run" : "Start run"}
+            {startRun.isPending
+              ? "Starting..."
+              : sandboxId
+                ? "Restart run"
+                : "Start run"}
           </button>
-          <StatusBadge streamStatus={streamStatus} agentBusy={agentBusy} />
+          <StatusBadge agentBusy={agentBusy} hasLogs={lines.length > 0} />
         </div>
       </header>
 
       <RunsPanel
-        owner={owner}
-        repo={repo}
-        prNumber={prNumber}
+        runs={runs}
+        runsLoading={runsLoading}
         activeSandboxId={sandboxId}
-        onSelectRun={connectToSandbox}
+        onSelectRun={selectSandbox}
+        onKillRun={(id) => killRun.mutate(id)}
+        killingIds={
+          killRun.isPending ? new Set([killRun.variables]) : new Set()
+        }
+        onKillAll={() => killAll.mutate()}
+        killingAll={killAll.isPending}
       />
 
       <div className="grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)_minmax(0,2fr)] overflow-hidden">
@@ -354,8 +189,8 @@ function PRViewer({
             <div className="text-xs text-gray-600">No logs yet.</div>
           ) : (
             <div className="space-y-0.5 font-mono text-[12px] leading-relaxed">
-              {lines.map((line) => (
-                <SetupLogEntry key={line.id} raw={line.raw} />
+              {lines.map((line, i) => (
+                <SetupLogEntry key={i} raw={line} />
               ))}
             </div>
           )}
@@ -403,11 +238,11 @@ function PRViewer({
 // ---------------------------------------------------------------------------
 
 function StatusBadge({
-  streamStatus,
   agentBusy,
+  hasLogs,
 }: {
-  streamStatus: ConnectionStatus;
   agentBusy: boolean;
+  hasLogs: boolean;
 }) {
   if (agentBusy) {
     return (
@@ -418,35 +253,19 @@ function StatusBadge({
     );
   }
 
-  const config: Record<
-    ConnectionStatus,
-    { dot: string; label: string; text: string }
-  > = {
-    connected: {
-      dot: "bg-green-500",
-      label: "Connected",
-      text: "text-green-500",
-    },
-    disconnected: {
-      dot: "bg-gray-600",
-      label: "Disconnected",
-      text: "text-gray-500",
-    },
-    idle: { dot: "bg-gray-600", label: "Idle", text: "text-gray-500" },
-    error: {
-      dot: "bg-red-500",
-      label: "Reconnecting...",
-      text: "text-red-400",
-    },
-    ended: { dot: "bg-gray-600", label: "Done", text: "text-gray-500" },
-  };
-
-  const s = config[streamStatus];
+  if (hasLogs) {
+    return (
+      <>
+        <span className="text-xs text-gray-500">Polling</span>
+        <span className="size-2 rounded-full bg-green-500" />
+      </>
+    );
+  }
 
   return (
     <>
-      <span className={`text-xs ${s.text}`}>{s.label}</span>
-      <span className={`size-2 rounded-full ${s.dot}`} title={s.label} />
+      <span className="text-xs text-gray-500">Idle</span>
+      <span className="size-2 rounded-full bg-gray-600" />
     </>
   );
 }
@@ -585,81 +404,25 @@ function timeAgo(dateStr: string): string {
 }
 
 function RunsPanel({
-  owner,
-  repo,
-  prNumber,
+  runs,
+  runsLoading,
   activeSandboxId,
   onSelectRun,
+  onKillRun,
+  killingIds,
+  onKillAll,
+  killingAll,
 }: {
-  owner: string;
-  repo: string;
-  prNumber: number;
+  runs: Run[];
+  runsLoading: boolean;
   activeSandboxId: string | null;
   onSelectRun: (id: string) => void;
+  onKillRun: (id: string) => void;
+  killingIds: Set<string | undefined>;
+  onKillAll: () => void;
+  killingAll: boolean;
 }) {
-  const [runs, setRuns] = useState<Run[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [killingIds, setKillingIds] = useState<Set<string>>(new Set());
-  const [killingAll, setKillingAll] = useState(false);
-
-  const fetchRuns = useCallback(async () => {
-    try {
-      const res = await fetch(
-        `/runs?owner=${encodeURIComponent(owner)}&repo=${encodeURIComponent(repo)}&pr=${prNumber}`,
-      );
-      if (res.ok) {
-        const data = await res.json();
-        setRuns(data.runs ?? []);
-      }
-    } catch {
-      // Transient
-    } finally {
-      setLoading(false);
-    }
-  }, [owner, repo, prNumber]);
-
-  const handleKill = useCallback(
-    async (runId: string) => {
-      setKillingIds((prev) => new Set(prev).add(runId));
-      try {
-        await fetch("/runs/kill", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ runs: [runId] }),
-        });
-        await fetchRuns();
-      } finally {
-        setKillingIds((prev) => {
-          const next = new Set(prev);
-          next.delete(runId);
-          return next;
-        });
-      }
-    },
-    [fetchRuns],
-  );
-
-  const handleKillAll = useCallback(async () => {
-    setKillingAll(true);
-    try {
-      await fetch("/runs/kill", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ all: true }),
-      });
-      await fetchRuns();
-    } finally {
-      setKillingAll(false);
-    }
-  }, [fetchRuns]);
-
-  useEffect(() => {
-    fetchRuns();
-    const interval = setInterval(fetchRuns, 5_000);
-    return () => clearInterval(interval);
-  }, [fetchRuns]);
-
-  if (loading && runs.length === 0) {
+  if (runsLoading && runs.length === 0) {
     return (
       <div className="border-b border-gray-800 px-6 py-3">
         <div className="flex items-center gap-2 text-xs text-gray-500">
@@ -672,6 +435,10 @@ function RunsPanel({
 
   if (runs.length === 0) return null;
 
+  const hasActive = runs.some(
+    (r) => r.status === "queued" || r.status === "running",
+  );
+
   return (
     <div className="border-b border-gray-800 px-6 py-3">
       <div className="mb-2 flex items-center gap-2">
@@ -679,9 +446,9 @@ function RunsPanel({
         <h2 className="text-xs font-semibold uppercase tracking-wide text-gray-500">
           Runs
         </h2>
-        {runs.some((r) => r.status === "queued" || r.status === "running") && (
+        {hasActive && (
           <button
-            onClick={handleKillAll}
+            onClick={onKillAll}
             disabled={killingAll}
             className="ml-auto flex items-center gap-1 rounded border border-red-900/50 px-2 py-0.5 text-[10px] font-medium text-red-400 transition-colors hover:border-red-700 hover:bg-red-950/40 disabled:opacity-50"
             title="Kill all active runs"
@@ -694,13 +461,11 @@ function RunsPanel({
             Kill all
           </button>
         )}
-        <button
-          onClick={fetchRuns}
-          className={`${runs.some((r) => r.status === "queued" || r.status === "running") ? "" : "ml-auto "}text-gray-600 transition-colors hover:text-gray-400`}
-          title="Refresh"
+        <span
+          className={`${hasActive ? "" : "ml-auto "}text-gray-600 transition-colors hover:text-gray-400`}
         >
           <IconRefresh size={14} />
-        </button>
+        </span>
       </div>
       <div className="flex flex-wrap gap-2">
         {runs.map((run) => {
@@ -749,7 +514,7 @@ function RunsPanel({
                 <button
                   onClick={(e) => {
                     e.stopPropagation();
-                    handleKill(run.id);
+                    onKillRun(run.id);
                   }}
                   disabled={isKilling}
                   className="ml-1 rounded p-1 text-gray-600 transition-colors hover:bg-red-950/60 hover:text-red-400 disabled:opacity-50"
