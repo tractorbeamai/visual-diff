@@ -1,6 +1,8 @@
 import type { Sandbox as SandboxDO } from "@cloudflare/sandbox";
+import type { WorkflowParams } from "./workflow";
 
 export type { Run, RunStatus } from "./run-types";
+export type { WorkflowParams };
 
 /**
  * Worker environment -- extends the generated Cloudflare.Env with secrets
@@ -13,30 +15,13 @@ export interface Env extends Omit<Cloudflare.Env, "Sandbox"> {
   Sandbox: DurableObjectNamespace<SandboxDO>;
   DB: D1Database;
   LOGS: R2Bucket;
+  SCREENSHOT_WORKFLOW: Workflow;
   // Secrets
   GITHUB_APP_ID: string;
   GITHUB_APP_PRIVATE_KEY: string;
   GITHUB_WEBHOOK_SECRET: string;
   ANTHROPIC_API_KEY: string;
   INTERNAL_SECRET: string;
-}
-
-/**
- * Message enqueued for the screenshot worker to process.
- * All three triggers (merge webhook, @visual-diff comment, /trigger API)
- * produce the same message shape.
- */
-export interface QueueMessage {
-  sandboxId: string;
-  owner: string;
-  repo: string;
-  prNumber: number;
-  commitSha: string;
-  installationId: number;
-  prTitle: string;
-  prDescription: string;
-  prDiff: string;
-  changedFiles: ChangedFile[];
 }
 
 export interface ChangedFile {

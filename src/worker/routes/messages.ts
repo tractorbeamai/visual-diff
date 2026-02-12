@@ -19,7 +19,7 @@ messages.get("/", async (c) => {
 
   // Try the live sandbox first
   try {
-    // Read session metadata written by startScreenshotJob
+    // Read session metadata written by the workflow's start-agent step
     const file = await Promise.race([
       sandbox.readFile("/workspace/opencode-session.json"),
       new Promise<never>((_, reject) =>

@@ -11,6 +11,23 @@ function runPrefix(owner: string, repo: string, sandboxId: string): string {
   return `${owner}/${repo}/${sandboxId}`;
 }
 
+/**
+ * R2 key where a screenshot is stored.
+ */
+export function screenshotR2Key(
+  owner: string,
+  repo: string,
+  sandboxId: string,
+  route: string,
+): string {
+  const slug =
+    route
+      .replace(/^\//, "")
+      .replace(/\//g, "-")
+      .replace(/[^a-zA-Z0-9-]/g, "") || "index";
+  return `${runPrefix(owner, repo, sandboxId)}/${slug}.png`;
+}
+
 /** R2 key where a run's logs are stored. */
 export function logsR2Key(
   owner: string,
@@ -79,24 +96,6 @@ export async function getMessagesFromR2(
   const obj = await env.LOGS.get(messagesR2Key(owner, repo, sandboxId));
   if (!obj) return null;
   return obj.json();
-}
-
-/**
- * Build the R2 object key for a screenshot.
- * Format: {owner}/{repo}/pr-{number}/{route-slug}.png
- */
-export function buildR2Key(
-  owner: string,
-  repo: string,
-  prNumber: number,
-  route: string,
-): string {
-  const slug =
-    route
-      .replace(/^\//, "")
-      .replace(/\//g, "-")
-      .replace(/[^a-zA-Z0-9-]/g, "") || "index";
-  return `${owner}/${repo}/pr-${prNumber}/${slug}.png`;
 }
 
 /**
