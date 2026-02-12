@@ -4,7 +4,6 @@ import {
   createOctokit,
   reactToComment,
 } from "../github";
-import { buildQueueMessage, buildQueueMessageFromPR } from "../queue";
 import { registerRun } from "../db";
 import type { Env } from "../types";
 
@@ -37,6 +36,7 @@ webhook.post("/", async (c) => {
     const owner = payload.repository.owner.login;
     const repo = payload.repository.name;
     const commitSha = pr.merge_commit_sha ?? pr.head.sha;
+    const installationId = payload.installation.id;
 
     await registerRun(c.env, {
       id: sid,
@@ -46,17 +46,18 @@ webhook.post("/", async (c) => {
       commitSha,
     });
 
-    const installationId = payload.installation.id;
-    const message = await buildQueueMessage(c.env, {
-      owner,
-      repo,
-      prNumber: pr.number,
-      commitSha,
-      installationId,
-      prTitle: pr.title,
-      prDescription: pr.body ?? "",
+    await c.env.SCREENSHOT_WORKFLOW.create({
+      id: sid,
+      params: {
+        sandboxId: sid,
+        owner,
+        repo,
+        prNumber: pr.number,
+        commitSha,
+        installationId,
+      },
     });
-    await c.env.SCREENSHOT_QUEUE.send({ ...message, sandboxId: sid });
+
     return c.text("Accepted", 202);
   }
 
@@ -93,15 +94,18 @@ webhook.post("/", async (c) => {
       commitSha: pr.data.head.sha,
     });
 
-    const message = await buildQueueMessageFromPR(
-      c.env,
-      owner,
-      repo,
-      prNumber,
-      pr.data.head.sha,
-      installationId,
-    );
-    await c.env.SCREENSHOT_QUEUE.send({ ...message, sandboxId: sid });
+    await c.env.SCREENSHOT_WORKFLOW.create({
+      id: sid,
+      params: {
+        sandboxId: sid,
+        owner,
+        repo,
+        prNumber,
+        commitSha: pr.data.head.sha,
+        installationId,
+      },
+    });
+
     return c.text("Accepted", 202);
   }
 

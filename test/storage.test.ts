@@ -1,18 +1,22 @@
 import { describe, it, expect } from "vitest";
-import { buildR2Key, buildCommentMarkdown } from "../src/worker/storage";
+import { screenshotR2Key, buildCommentMarkdown } from "../src/worker/storage";
 
-describe("buildR2Key", () => {
+describe("screenshotR2Key", () => {
   it.each([
-    ["/dashboard", "owner/repo/pr-1/dashboard.png", "simple route"],
+    ["/dashboard", "owner/repo/sandbox-1/dashboard.png", "simple route"],
     [
       "/settings/profile",
-      "owner/repo/pr-1/settings-profile.png",
+      "owner/repo/sandbox-1/settings-profile.png",
       "nested route",
     ],
-    ["/", "owner/repo/pr-1/index.png", "root route"],
-    ["/foo?bar=baz", "owner/repo/pr-1/foobarbaz.png", "special characters"],
+    ["/", "owner/repo/sandbox-1/index.png", "root route"],
+    [
+      "/foo?bar=baz",
+      "owner/repo/sandbox-1/foobarbaz.png",
+      "special characters",
+    ],
   ])("slugifies %s -> %s (%s)", (route, expected) => {
-    expect(buildR2Key("owner", "repo", 1, route)).toBe(expected);
+    expect(screenshotR2Key("owner", "repo", "sandbox-1", route)).toBe(expected);
   });
 });
 

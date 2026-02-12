@@ -1,9 +1,9 @@
 import { Hono } from "hono";
 import { proxyToSandbox } from "@cloudflare/sandbox";
 export { Sandbox } from "@cloudflare/sandbox";
+export { ScreenshotWorkflow } from "./workflow";
 
 import { handleCDP } from "./cdp";
-import { handleQueue } from "./queue";
 import { webhook } from "./routes/webhook";
 import { start } from "./routes/start";
 import { logs } from "./routes/logs";
@@ -56,5 +56,4 @@ app.get("/health", (c) => c.json({ status: "ok", service: "visual-diff" }));
 
 export default {
   fetch: app.fetch,
-  queue: handleQueue,
 };

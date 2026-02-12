@@ -1,7 +1,7 @@
 {
   // Minimal wrangler config for vitest-pool-workers.
-  // Containers/Browser Rendering can't be emulated by miniflare,
-  // so we only include bindings that miniflare supports (R2, Queues).
+  // Containers/Browser Rendering/Workflows can't be emulated by miniflare,
+  // so we only include bindings that miniflare supports (D1, R2).
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "visual-diff",
   "main": "src/worker/index.ts",
@@ -11,6 +11,7 @@
     {
       "binding": "DB",
       "database_name": "visual-diff-db",
+      "database_id": "test-db-id",
     },
   ],
   "r2_buckets": [
@@ -23,12 +24,6 @@
       "bucket_name": "visual-diff-logs",
     },
   ],
-  "queues": {
-    "producers": [
-      { "binding": "SCREENSHOT_QUEUE", "queue": "visual-diff-jobs" },
-    ],
-    "consumers": [{ "queue": "visual-diff-jobs", "max_retries": 2 }],
-  },
   // Secrets are provided via .dev.vars for test environment
   "vars": {},
 }
