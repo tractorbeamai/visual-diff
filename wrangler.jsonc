@@ -55,22 +55,13 @@
       "bucket_name": "visual-diff-logs",
     },
   ],
-  "queues": {
-    "producers": [
-      {
-        "binding": "SCREENSHOT_QUEUE",
-        "queue": "visual-diff-jobs",
-      },
-    ],
-    "consumers": [
-      {
-        "queue": "visual-diff-jobs",
-        "max_retries": 0,
-        "visibility_timeout_ms": 900000,
-        "max_batch_timeout": 0,
-      },
-    ],
-  },
+  "workflows": [
+    {
+      "name": "screenshot-workflow",
+      "binding": "SCREENSHOT_WORKFLOW",
+      "class_name": "ScreenshotWorkflow",
+    },
+  ],
   "routes": [
     {
       "pattern": "vd.tractorbeam.ai",

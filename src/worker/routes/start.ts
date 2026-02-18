@@ -5,7 +5,6 @@ import {
   parsePRUrl,
   lookupInstallationId,
 } from "../github";
-import { buildQueueMessage } from "../queue";
 import { registerRun } from "../db";
 import type { Env } from "../types";
 
@@ -62,16 +61,17 @@ start.post("/", async (c) => {
     commitSha: prDetails.headSha,
   });
 
-  const message = await buildQueueMessage(c.env, {
-    owner,
-    repo,
-    prNumber,
-    commitSha: prDetails.headSha,
-    installationId,
-    prTitle: prDetails.title,
-    prDescription: prDetails.body,
+  await c.env.SCREENSHOT_WORKFLOW.create({
+    id: sid,
+    params: {
+      sandboxId: sid,
+      owner,
+      repo,
+      prNumber,
+      commitSha: prDetails.headSha,
+      installationId,
+    },
   });
-  await c.env.SCREENSHOT_QUEUE.send({ ...message, sandboxId: sid });
 
   return c.json(
     {

@@ -37,6 +37,14 @@ export async function registerRun(
       .bind(existing.id)
       .run();
 
+    // Best-effort terminate the old workflow instance
+    try {
+      const instance = await env.SCREENSHOT_WORKFLOW.get(existing.id);
+      await instance.terminate();
+    } catch {
+      // Workflow instance may already be gone
+    }
+
     // Best-effort destroy the old sandbox
     try {
       const sandbox = getSandbox(env.Sandbox, existing.id);
@@ -105,7 +113,8 @@ export async function updateRunStatus(
 }
 
 /**
- * Force-kill a run: mark it failed in D1 and destroy its sandbox DO.
+ * Force-kill a run: mark it failed in D1, terminate its workflow, and
+ * destroy its sandbox DO.
  * Returns true if a run was found and updated.
  */
 export async function killRun(env: Env, runId: string): Promise<boolean> {
@@ -121,6 +130,14 @@ export async function killRun(env: Env, runId: string): Promise<boolean> {
   )
     .bind(runId)
     .run();
+
+  // Best-effort terminate the workflow instance
+  try {
+    const instance = await env.SCREENSHOT_WORKFLOW.get(runId);
+    await instance.terminate();
+  } catch {
+    // Workflow instance may already be gone
+  }
 
   // Best-effort destroy the sandbox DO
   try {
