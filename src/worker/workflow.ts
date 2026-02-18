@@ -61,6 +61,9 @@ export class ScreenshotWorkflow extends WorkflowEntrypoint<
         const sandbox = getSandbox(this.env.Sandbox, p.sandboxId);
         const token = await getInstallationToken(this.env, p.installationId);
 
+        await sandbox.exec(
+          "timeout 30 sh -c 'until docker version >/dev/null 2>&1; do sleep 0.5; done'",
+        );
         await sandbox.exec("touch /workspace/agent.log");
         await sandbox.exec("rm -rf /workspace/repo");
         await sandbox.gitCheckout(

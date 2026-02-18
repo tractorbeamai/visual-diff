@@ -34,21 +34,32 @@ Read these first:
    - \`/workspace/repo/.circleci/config.yml\` -- CircleCI config
    - \`/workspace/repo/Makefile\` or \`/workspace/repo/Taskfile.yml\` -- task runners
    Look for: dependency install commands, build steps, required environment variables, Node/Python/runtime version requirements, and any services (databases, Redis, etc.) the app needs.
-4. **Analyze the codebase** to understand the routing structure. Look for:
+4. **Start Docker services** if the project needs them. Docker and \`docker compose\` are available in this sandbox.
+   - Check for \`docker-compose.yml\`, \`docker-compose.yaml\`, or \`compose.yml\` in the repo root.
+   - CI configs often reveal required services (Postgres, Redis, Elasticsearch, etc.) -- look for \`services:\` sections in GitHub Actions workflows.
+   - **All Docker commands MUST use \`--network host\`** (iptables is not available in the sandbox). Examples:
+     \`\`\`
+     docker compose -f /workspace/repo/docker-compose.yml up -d --network host
+     docker run -d --network host -e POSTGRES_PASSWORD=postgres postgres:16
+     \`\`\`
+   - Services started this way are accessible on \`localhost\` at their configured ports.
+   - Wait for services to be healthy before proceeding (e.g. \`docker compose up -d && docker compose exec db pg_isready\` or poll with curl/nc).
+   - If the project does not use Docker, skip this step entirely.
+5. **Analyze the codebase** to understand the routing structure. Look for:
    - File-based routing (Next.js pages/, app/ dirs, Remix routes/, etc.)
    - Router configuration files
    - Existing Playwright/Cypress tests for route patterns and auth flows
-5. **Determine which routes/pages were affected** by the PR changes.
-6. **Install dependencies and build** in /workspace/repo:
+6. **Determine which routes/pages were affected** by the PR changes.
+7. **Install dependencies and build** in /workspace/repo:
    - If \`.cursor/environment.json\` exists, use its \`install\` command.
    - Otherwise, infer from CI configs or lock files (package-lock.json -> npm, pnpm-lock.yaml -> pnpm, yarn.lock -> yarn, etc.)
    - If CI workflows show a separate build step, run that too.
-7. **Start the dev server** on port 8080 (NOT port 3000 -- that's reserved by the sandbox).
+8. **Start the dev server** on port 8080 (NOT port 3000 -- that's reserved by the sandbox).
    - If \`.cursor/environment.json\` has a \`terminals\` entry, adapt its command to use port 8080.
    - Otherwise, use PORT=8080 or the appropriate env var/flag for the framework.
    - Wait for it to be ready (check with curl http://localhost:8080).
    - Run the dev server in the background.
-8. **Use agent-browser to take screenshots** of each affected route:
+9. **Use agent-browser to take screenshots** of each affected route:
 
    Connect to the remote browser:
    \`\`\`
@@ -69,7 +80,7 @@ Read these first:
 
    If the app requires authentication, look at existing test files (Playwright, Cypress) to find test credentials and login flows. Perform the login flow before taking screenshots of protected routes.
 
-9. **Write the screenshot manifest** to /workspace/screenshot-manifest.json with this exact format:
+10. **Write the screenshot manifest** to /workspace/screenshot-manifest.json with this exact format:
    \`\`\`json
    {
      "screenshots": [
