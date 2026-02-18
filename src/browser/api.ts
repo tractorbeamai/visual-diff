@@ -111,10 +111,8 @@ export function useKillRun(owner: string, repo: string, prNumber: number) {
 
   return useMutation({
     mutationFn: async (runId: string) => {
-      await fetch("/runs/kill", {
+      await fetch(`/runs/${encodeURIComponent(runId)}/kill`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ runs: [runId] }),
       });
     },
     onSuccess: () => {
@@ -129,12 +127,12 @@ export function useKillAllRuns(owner: string, repo: string, prNumber: number) {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: async () => {
-      await fetch("/runs/kill", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ all: true }),
-      });
+    mutationFn: async (runIds: string[]) => {
+      await Promise.allSettled(
+        runIds.map((id) =>
+          fetch(`/runs/${encodeURIComponent(id)}/kill`, { method: "POST" }),
+        ),
+      );
     },
     onSuccess: () => {
       queryClient.invalidateQueries({

@@ -2,6 +2,7 @@ import { Hono } from "hono";
 import { getSandbox } from "@cloudflare/sandbox";
 import { getLogsFromR2 } from "../storage";
 import { getRun } from "../db";
+import { withTimeout } from "../utils";
 import type { Env } from "../types";
 
 const logs = new Hono<{ Bindings: Env }>();
@@ -17,12 +18,10 @@ logs.get("/", async (c) => {
 
   // Try the live sandbox first
   try {
-    const result = await Promise.race([
+    const result = await withTimeout(
       sandbox.exec("cat /workspace/agent.log 2>/dev/null || true"),
-      new Promise<never>((_, reject) =>
-        setTimeout(() => reject(new Error("exec timeout")), 5_000),
-      ),
-    ]);
+      5_000,
+    );
 
     const lines = (result.stdout ?? "").split("\n").filter(Boolean);
 

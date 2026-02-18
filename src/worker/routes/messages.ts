@@ -4,6 +4,7 @@ import { createOpencode } from "@cloudflare/sandbox/opencode";
 import type { OpencodeClient } from "@opencode-ai/sdk";
 import { getMessagesFromR2 } from "../storage";
 import { getRun } from "../db";
+import { withTimeout } from "../utils";
 import type { Env } from "../types";
 
 const messages = new Hono<{ Bindings: Env }>();
@@ -20,12 +21,10 @@ messages.get("/", async (c) => {
   // Try the live sandbox first
   try {
     // Read session metadata written by the workflow's start-agent step
-    const file = await Promise.race([
+    const file = await withTimeout(
       sandbox.readFile("/workspace/opencode-session.json"),
-      new Promise<never>((_, reject) =>
-        setTimeout(() => reject(new Error("read timeout")), 5_000),
-      ),
-    ]);
+      5_000,
+    );
     const meta = JSON.parse(file.content as string);
     const sessionId: string = meta.sessionId;
     const directory: string = meta.directory;

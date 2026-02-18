@@ -1,5 +1,6 @@
 import { getSandbox } from "@cloudflare/sandbox";
 import type { Env, Run, RunStatus } from "./types";
+import { bestEffort } from "./utils";
 
 /**
  * Register a new run for a PR. If there's already an active run (queued or
@@ -37,24 +38,15 @@ export async function registerRun(
       .bind(existing.id)
       .run();
 
-    // Best-effort terminate the old workflow instance
-    try {
+    await bestEffort(async () => {
       const instance = await env.SCREENSHOT_WORKFLOW.get(existing.id);
       await instance.terminate();
-    } catch {
-      // Workflow instance may already be gone
-    }
+    });
 
-    // Best-effort destroy the old sandbox
-    try {
+    await bestEffort(async () => {
       const sandbox = getSandbox(env.Sandbox, existing.id);
       await sandbox.destroy();
-      console.log(
-        `Cancelled run ${existing.id.slice(0, 8)} for ${run.owner}/${run.repo}#${run.prNumber}`,
-      );
-    } catch {
-      // Sandbox may already be gone
-    }
+    });
 
     cancelledRun = existing;
   }
@@ -131,22 +123,15 @@ export async function killRun(env: Env, runId: string): Promise<boolean> {
     .bind(runId)
     .run();
 
-  // Best-effort terminate the workflow instance
-  try {
+  await bestEffort(async () => {
     const instance = await env.SCREENSHOT_WORKFLOW.get(runId);
     await instance.terminate();
-  } catch {
-    // Workflow instance may already be gone
-  }
+  });
 
-  // Best-effort destroy the sandbox DO
-  try {
+  await bestEffort(async () => {
     const sandbox = getSandbox(env.Sandbox, runId);
     await sandbox.destroy();
-    console.log(`Sandbox ${runId.slice(0, 8)} destroyed via kill`);
-  } catch {
-    // Sandbox may already be gone
-  }
+  });
 
   return true;
 }

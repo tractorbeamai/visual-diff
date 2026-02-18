@@ -31,17 +31,18 @@ function RunStatusIcon({ status }: { status: Run["status"] }) {
   }
 }
 
+const rtf = new Intl.RelativeTimeFormat("en", { numeric: "always", style: "narrow" });
+
 function timeAgo(dateStr: string): string {
   const seconds = Math.floor(
     (Date.now() - new Date(dateStr + "Z").getTime()) / 1000,
   );
-  if (seconds < 60) return `${seconds}s ago`;
+  if (seconds < 60) return rtf.format(-seconds, "second");
   const minutes = Math.floor(seconds / 60);
-  if (minutes < 60) return `${minutes}m ago`;
+  if (minutes < 60) return rtf.format(-minutes, "minute");
   const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `${hours}h ago`;
-  const days = Math.floor(hours / 24);
-  return `${days}d ago`;
+  if (hours < 24) return rtf.format(-hours, "hour");
+  return rtf.format(-Math.floor(hours / 24), "day");
 }
 
 export function RunsPanel({

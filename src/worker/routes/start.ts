@@ -5,7 +5,7 @@ import {
   parsePRUrl,
   lookupInstallationId,
 } from "../github";
-import { registerRun } from "../db";
+import { createWorkflowRun } from "../utils";
 import type { Env } from "../types";
 
 const start = new Hono<{ Bindings: Env }>();
@@ -51,33 +51,19 @@ start.post("/", async (c) => {
   const octokit = createOctokit(c.env, installationId);
   const prDetails = await fetchPRDetails(octokit, owner, repo, prNumber);
 
-  const sid = crypto.randomUUID();
-
-  const { cancelledRun } = await registerRun(c.env, {
-    id: sid,
+  const { sandboxId, cancelledRun } = await createWorkflowRun(c.env, {
     owner,
     repo,
     prNumber,
     commitSha: prDetails.headSha,
-  });
-
-  await c.env.SCREENSHOT_WORKFLOW.create({
-    id: sid,
-    params: {
-      sandboxId: sid,
-      owner,
-      repo,
-      prNumber,
-      commitSha: prDetails.headSha,
-      installationId,
-    },
+    installationId,
   });
 
   return c.json(
     {
       status: "accepted",
       pr: `${owner}/${repo}#${prNumber}`,
-      sandboxId: sid,
+      sandboxId,
       cancelledRun: cancelledRun?.id ?? null,
     },
     202,

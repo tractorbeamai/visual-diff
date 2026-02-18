@@ -4,7 +4,7 @@ import {
   createOctokit,
   reactToComment,
 } from "../github";
-import { registerRun } from "../db";
+import { createWorkflowRun } from "../utils";
 import type { Env } from "../types";
 
 const webhook = new Hono<{ Bindings: Env }>();
@@ -31,31 +31,13 @@ webhook.post("/", async (c) => {
     payload.action === "closed" &&
     payload.pull_request?.merged === true
   ) {
-    const sid = crypto.randomUUID();
     const pr = payload.pull_request;
-    const owner = payload.repository.owner.login;
-    const repo = payload.repository.name;
-    const commitSha = pr.merge_commit_sha ?? pr.head.sha;
-    const installationId = payload.installation.id;
-
-    await registerRun(c.env, {
-      id: sid,
-      owner,
-      repo,
+    await createWorkflowRun(c.env, {
+      owner: payload.repository.owner.login,
+      repo: payload.repository.name,
       prNumber: pr.number,
-      commitSha,
-    });
-
-    await c.env.SCREENSHOT_WORKFLOW.create({
-      id: sid,
-      params: {
-        sandboxId: sid,
-        owner,
-        repo,
-        prNumber: pr.number,
-        commitSha,
-        installationId,
-      },
+      commitSha: pr.merge_commit_sha ?? pr.head.sha,
+      installationId: payload.installation.id,
     });
 
     return c.text("Accepted", 202);
@@ -84,26 +66,12 @@ webhook.post("/", async (c) => {
       pull_number: prNumber,
     });
 
-    const sid = crypto.randomUUID();
-
-    await registerRun(c.env, {
-      id: sid,
+    await createWorkflowRun(c.env, {
       owner,
       repo,
       prNumber,
       commitSha: pr.data.head.sha,
-    });
-
-    await c.env.SCREENSHOT_WORKFLOW.create({
-      id: sid,
-      params: {
-        sandboxId: sid,
-        owner,
-        repo,
-        prNumber,
-        commitSha: pr.data.head.sha,
-        installationId,
-      },
+      installationId,
     });
 
     return c.text("Accepted", 202);
