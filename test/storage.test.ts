@@ -1,5 +1,11 @@
 import { describe, it, expect } from "vitest";
-import { screenshotR2Key, buildCommentMarkdown } from "../src/worker/storage";
+import {
+  screenshotR2Key,
+  logsR2Key,
+  messagesR2Key,
+  buildPublicUrl,
+  buildCommentMarkdown,
+} from "../src/worker/storage";
 
 describe("screenshotR2Key", () => {
   it.each([
@@ -17,6 +23,42 @@ describe("screenshotR2Key", () => {
     ],
   ])("slugifies %s -> %s (%s)", (route, expected) => {
     expect(screenshotR2Key("owner", "repo", "sandbox-1", route)).toBe(expected);
+  });
+});
+
+describe("logsR2Key", () => {
+  it("builds correct R2 key for logs", () => {
+    expect(logsR2Key("acme", "widget", "abc123")).toBe(
+      "acme/widget/abc123/agent.log",
+    );
+  });
+
+  it("handles special characters in owner/repo names", () => {
+    expect(logsR2Key("my-org", "my.repo", "run-1")).toBe(
+      "my-org/my.repo/run-1/agent.log",
+    );
+  });
+});
+
+describe("messagesR2Key", () => {
+  it("builds correct R2 key for messages", () => {
+    expect(messagesR2Key("acme", "widget", "abc123")).toBe(
+      "acme/widget/abc123/messages.json",
+    );
+  });
+});
+
+describe("buildPublicUrl", () => {
+  it("builds correct public URL from R2 key", () => {
+    expect(buildPublicUrl("acme/widget/run-1/dashboard.png")).toBe(
+      "https://screenshots.tractorbeam.ai/acme/widget/run-1/dashboard.png",
+    );
+  });
+
+  it("handles keys with special characters", () => {
+    expect(buildPublicUrl("my-org/my.repo/run/settings-profile.png")).toBe(
+      "https://screenshots.tractorbeam.ai/my-org/my.repo/run/settings-profile.png",
+    );
   });
 });
 
