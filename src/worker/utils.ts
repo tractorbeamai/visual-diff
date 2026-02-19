@@ -50,6 +50,10 @@ export async function createWorkflowRun(
       commitSha: params.commitSha,
       installationId: params.installationId,
     },
+    retention: {
+      successRetention: "1 day",
+      errorRetention: "3 days",
+    },
   });
 
   return { sandboxId, cancelledRun };

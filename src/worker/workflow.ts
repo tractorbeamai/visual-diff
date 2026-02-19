@@ -51,10 +51,6 @@ export class ScreenshotWorkflow extends WorkflowEntrypoint<
   async run(event: WorkflowEvent<WorkflowParams>, step: WorkflowStep) {
     const p = event.payload;
 
-    // #region agent log
-    console.log('[DBG-d73243]', JSON.stringify({location:'workflow.ts:run:entry',message:'Workflow run started',data:{sandboxId:p.sandboxId,owner:p.owner,repo:p.repo,prNumber:p.prNumber,commitSha:p.commitSha},timestamp:Date.now()}));
-    // #endregion
-
     try {
       await step.do("mark-running", () =>
         updateRunStatus(this.env.DB, p.sandboxId, "running"),
@@ -92,42 +88,38 @@ export class ScreenshotWorkflow extends WorkflowEntrypoint<
       await sandbox.exec("rm -rf /workspace/repo");
 
       // #region agent log
-      console.log('[DBG-d73243]', JSON.stringify({location:'workflow.ts:cloneRepo:pre-gitCheckout',message:'About to gitCheckout',data:{owner:p.owner,repo:p.repo,targetDir:'repo'},timestamp:Date.now()}));
+      const ts = () => new Date().toISOString();
+      const log = (msg: string) => sandbox.exec(`echo '${ts()} [clone] ${msg}' >> /workspace/agent.log`);
+      await log("Starting git clone...");
       // #endregion
 
-      let gitCheckoutResult: unknown;
-      try {
-        gitCheckoutResult = await sandbox.gitCheckout(
-          `https://x-access-token:${token}@github.com/${p.owner}/${p.repo}.git`,
-          { targetDir: "repo" },
-        );
-      } catch (err) {
-        // #region agent log
-        console.log('[DBG-d73243]', JSON.stringify({location:'workflow.ts:cloneRepo:gitCheckout-error',message:'gitCheckout threw an error',data:{error:String(err),stack:(err as Error)?.stack},timestamp:Date.now()}));
-        // #endregion
-        throw err;
+      await sandbox.gitCheckout(
+        `https://x-access-token:${token}@github.com/${p.owner}/${p.repo}.git`,
+        { targetDir: "/workspace/repo" },
+      );
+
+      // #region agent log
+      const verifyResult = await sandbox.exec("test -d /workspace/repo/.git && echo EXISTS || echo MISSING");
+      await log(`Repo dir check: ${(verifyResult.stdout ?? "").trim()}`);
+      // #endregion
+
+      if (!verifyResult.stdout?.includes("EXISTS")) {
+        throw new Error("gitCheckout did not create /workspace/repo");
       }
 
-      // #region agent log
-      console.log('[DBG-d73243]', JSON.stringify({location:'workflow.ts:cloneRepo:post-gitCheckout',message:'gitCheckout returned',data:{result:JSON.stringify(gitCheckoutResult)},timestamp:Date.now()}));
-      // #endregion
-
-      const lsResult = await sandbox.exec("ls -la /workspace/ && echo '---' && ls -la /workspace/repo 2>&1 || true");
-      // #region agent log
-      console.log('[DBG-d73243]', JSON.stringify({location:'workflow.ts:cloneRepo:ls-workspace',message:'Listing /workspace after gitCheckout',data:{stdout:lsResult.stdout,stderr:lsResult.stderr,exitCode:lsResult.exitCode},timestamp:Date.now()}));
-      // #endregion
-
-      const findResult = await sandbox.exec("find / -maxdepth 3 -name '.git' -type d 2>/dev/null | head -20");
-      // #region agent log
-      console.log('[DBG-d73243]', JSON.stringify({location:'workflow.ts:cloneRepo:find-git-dirs',message:'Finding .git dirs to locate where repo was cloned',data:{stdout:findResult.stdout,stderr:findResult.stderr},timestamp:Date.now()}));
-      // #endregion
-
-      const fetchCheckoutResult = await sandbox.exec(
+      const fetchResult = await sandbox.exec(
         `cd /workspace/repo && git fetch origin pull/${p.prNumber}/head && git checkout ${p.commitSha}`,
       );
+
       // #region agent log
-      console.log('[DBG-d73243]', JSON.stringify({location:'workflow.ts:cloneRepo:git-fetch-checkout',message:'git fetch + checkout result',data:{stdout:fetchCheckoutResult.stdout,stderr:fetchCheckoutResult.stderr,exitCode:fetchCheckoutResult.exitCode},timestamp:Date.now()}));
+      await log(`git fetch/checkout exitCode=${fetchResult.exitCode}`);
       // #endregion
+
+      if (!fetchResult.success) {
+        throw new Error(
+          `git fetch/checkout failed (exit ${fetchResult.exitCode}): ${fetchResult.stderr}`,
+        );
+      }
     });
   }
 
@@ -135,11 +127,6 @@ export class ScreenshotWorkflow extends WorkflowEntrypoint<
     await step.do("write-context", { timeout: "2 minutes" }, async () => {
       const sandbox = getSandbox(this.env.Sandbox, p.sandboxId);
       const octokit = createOctokit(this.env, p.installationId);
-
-      // #region agent log
-      const preWriteLs = await sandbox.exec("ls -la /workspace/ 2>&1 && echo '---REPO---' && ls /workspace/repo 2>&1 || true");
-      console.log('[DBG-d73243]', JSON.stringify({location:'workflow.ts:writeContext:pre-write',message:'Checking /workspace/repo exists before writeContext',data:{stdout:preWriteLs.stdout,stderr:preWriteLs.stderr,exitCode:preWriteLs.exitCode},timestamp:Date.now()}));
-      // #endregion
 
       const [prDetails, diff, changedFiles] = await Promise.all([
         fetchPRDetails(octokit, p.owner, p.repo, p.prNumber),
@@ -165,11 +152,6 @@ export class ScreenshotWorkflow extends WorkflowEntrypoint<
   private async startAgent(step: WorkflowStep, p: WorkflowParams) {
     await step.do("start-agent", { timeout: "3 minutes" }, async () => {
       const sandbox = getSandbox(this.env.Sandbox, p.sandboxId);
-
-      // #region agent log
-      const agentPreLs = await sandbox.exec("ls -la /workspace/ 2>&1 && echo '---REPO---' && ls /workspace/repo 2>&1 || true");
-      console.log('[DBG-d73243]', JSON.stringify({location:'workflow.ts:startAgent:pre-start',message:'Checking /workspace/repo before starting agent',data:{stdout:agentPreLs.stdout,stderr:agentPreLs.stderr,exitCode:agentPreLs.exitCode},timestamp:Date.now()}));
-      // #endregion
 
       const exposed = await sandbox.exposePort(8080, {
         hostname: "vd.tractorbeam.ai",
