@@ -13,3 +13,6 @@ ANTHROPIC_API_KEY=
 
 # Internal secret (generate a random value, e.g. `openssl rand -hex 32`)
 INTERNAL_SECRET=
+
+# Braintrust (optional, enables tracing of OpenCode agent sessions)
+BRAINTRUST_API_KEY=

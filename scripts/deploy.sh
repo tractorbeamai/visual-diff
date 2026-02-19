@@ -38,6 +38,7 @@ set -euo pipefail
 #    wrangler secret put GITHUB_WEBHOOK_SECRET
 #    wrangler secret put ANTHROPIC_API_KEY
 #    wrangler secret put INTERNAL_SECRET
+#    wrangler secret put BRAINTRUST_API_KEY  # optional, enables tracing
 
 echo "Running pre-deploy checks..."
 

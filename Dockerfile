@@ -30,7 +30,7 @@ RUN curl -fsSL https://opencode.ai/install -o /tmp/install-opencode.sh \
     && opencode --version
 
 # Install agent-browser for remote browser automation
-RUN npm install -g agent-browser
+RUN npm install -g agent-browser @braintrust/trace-opencode
 
 # Backward-compat wrapper so `docker-compose` delegates to `docker compose`
 RUN printf '#!/bin/sh\nexec docker compose "$@"\n' > /usr/local/bin/docker-compose \

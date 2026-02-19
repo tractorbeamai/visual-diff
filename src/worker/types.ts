@@ -22,6 +22,7 @@ export interface Env extends Omit<Cloudflare.Env, "Sandbox"> {
   GITHUB_WEBHOOK_SECRET: string;
   ANTHROPIC_API_KEY: string;
   INTERNAL_SECRET: string;
+  BRAINTRUST_API_KEY?: string;
 }
 
 export interface ChangedFile {
