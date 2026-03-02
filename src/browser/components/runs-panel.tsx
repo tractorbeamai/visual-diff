@@ -22,11 +22,11 @@ function RunStatusIcon({ status }: { status: Run["status"] }) {
       return <IconClock size={16} className="text-muted-foreground" />;
     case "running":
       return <IconLoader2 size={16} className="animate-spin text-amber-400" />;
-    case "completed":
+    case "complete":
       return <IconCircleCheck size={16} className="text-green-400" />;
-    case "failed":
+    case "errored":
       return <IconCircleX size={16} className="text-destructive" />;
-    case "cancelled":
+    case "terminated":
       return <IconBan size={16} className="text-muted-foreground/50" />;
   }
 }
@@ -140,6 +140,19 @@ export function RunsPanel({
                   </Tooltip>
                   <span>{timeAgo(run.created_at)}</span>
                 </div>
+                {run.error && (
+                  <Tooltip>
+                    <TooltipTrigger className="max-w-[200px] truncate text-[11px] text-destructive">
+                      {run.error}
+                    </TooltipTrigger>
+                    <TooltipContent
+                      side="bottom"
+                      className="max-w-sm whitespace-pre-wrap font-mono text-xs"
+                    >
+                      {run.error}
+                    </TooltipContent>
+                  </Tooltip>
+                )}
               </div>
               {isKillable && (
                 <Button

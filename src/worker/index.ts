@@ -9,6 +9,8 @@ import { start } from "./routes/start";
 import { logs } from "./routes/logs";
 import { messages } from "./routes/messages";
 import { runs } from "./routes/runs";
+import { sandboxDebug } from "./routes/sandbox-debug";
+import { cleanupStaleRuns } from "./db";
 import type { Env } from "./types";
 
 // ─── Hono App ─────────────────────────────────────────────────────────────────
@@ -50,10 +52,18 @@ app.route("/start", start);
 app.route("/logs", logs);
 app.route("/messages", messages);
 app.route("/runs", runs);
+app.route("/sandbox-debug", sandboxDebug);
 
 // Health check
 app.get("/health", (c) => c.json({ status: "ok", service: "visual-diff" }));
 
 export default {
   fetch: app.fetch,
+  async queue() {},
+  async scheduled(_event: ScheduledEvent, env: Env) {
+    const cleaned = await cleanupStaleRuns(env);
+    if (cleaned > 0) {
+      console.log(`Cleaned up ${cleaned} stale run(s)`);
+    }
+  },
 };

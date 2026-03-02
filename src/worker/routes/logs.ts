@@ -31,8 +31,16 @@ logs.get("/", async (c) => {
     if (lines.length > 0) {
       return c.json({ lines });
     }
-  } catch {
-    // Sandbox not reachable -- fall through to R2
+  } catch (err) {
+    const errorMsg = err instanceof Error ? err.message : String(err);
+    return c.json({
+      lines: [],
+      debug: {
+        error: "sandbox_fetch_failed",
+        detail: errorMsg,
+        sandboxId: id,
+      },
+    });
   }
 
   // Fall back to persisted logs in R2

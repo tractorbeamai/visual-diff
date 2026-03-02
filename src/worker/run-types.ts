@@ -7,9 +7,9 @@
 export type RunStatus =
   | "queued"
   | "running"
-  | "completed"
-  | "cancelled"
-  | "failed";
+  | "complete"
+  | "errored"
+  | "terminated";
 
 export interface Run {
   id: string;
@@ -18,6 +18,7 @@ export interface Run {
   pr_number: number;
   commit_sha: string;
   status: RunStatus;
+  error: string | null;
   created_at: string;
   updated_at: string;
 }

@@ -4,6 +4,7 @@ import {
   useRuns,
   useLogs,
   useMessages,
+  useSandboxDebug,
   useStartRun,
   useKillRun,
   useKillAllRuns,
@@ -12,6 +13,7 @@ import { useAutoScroll } from "@/hooks/use-auto-scroll";
 import { PRHeader } from "@/components/pr-header";
 import { PRTimeline } from "@/components/pr-timeline";
 import { RunsPanel } from "@/components/runs-panel";
+import { SandboxDebugPanel } from "@/components/sandbox-debug-panel";
 
 export const Route = createFileRoute("/$owner/$repo/pull/$prNumber")({
   component: PRViewer,
@@ -41,6 +43,7 @@ function PRViewer() {
   const { data: runs = [], isLoading: runsLoading } = useRuns(owner, repo, pr);
   const { data: lines = [] } = useLogs(sandboxId);
   const { data: messagesData } = useMessages(sandboxId);
+  const { data: debugData, isLoading: debugLoading } = useSandboxDebug(sandboxId);
   const startRun = useStartRun(owner, repo, pr);
   const killRun = useKillRun(owner, repo, pr);
   const killAll = useKillAllRuns(owner, repo, pr);
@@ -95,6 +98,10 @@ function PRViewer() {
         viewportRef={viewportRef}
         onScroll={handleScroll}
       />
+
+      {sandboxId && (
+        <SandboxDebugPanel data={debugData} isLoading={debugLoading} />
+      )}
     </div>
   );
 }

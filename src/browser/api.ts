@@ -79,6 +79,47 @@ export function useMessages(sandboxId: string | null) {
 }
 
 // ---------------------------------------------------------------------------
+// Sandbox Debug
+// ---------------------------------------------------------------------------
+
+export interface SandboxDebugData {
+  processes?: {
+    processes?: Array<{
+      id: string;
+      command: string;
+      status: string;
+      pid?: number;
+    }>;
+    error?: string;
+  };
+  agentLog?: string;
+  opencodeDir?: string;
+  homeLogs?: string;
+  sessionFile?: string;
+  psAux?: string;
+  findOpencode?: string;
+  processLogs?: Record<string, { stdout: string; stderr: string }>;
+  error?: string;
+  detail?: string;
+}
+
+export function useSandboxDebug(sandboxId: string | null) {
+  return useQuery<SandboxDebugData>({
+    queryKey: ["sandbox-debug", sandboxId],
+    queryFn: async () => {
+      if (!sandboxId) return {};
+      const res = await fetch(
+        `/sandbox-debug?id=${encodeURIComponent(sandboxId)}`,
+      );
+      if (!res.ok) return { error: "fetch_failed" };
+      return res.json();
+    },
+    enabled: !!sandboxId,
+    refetchInterval: 2000,
+  });
+}
+
+// ---------------------------------------------------------------------------
 // Mutations
 // ---------------------------------------------------------------------------
 

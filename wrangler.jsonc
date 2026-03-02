@@ -62,6 +62,9 @@
       "class_name": "ScreenshotWorkflow",
     },
   ],
+  "triggers": {
+    "crons": ["0 */6 * * *"],
+  },
   "routes": [
     {
       "pattern": "vd.tractorbeam.ai",
