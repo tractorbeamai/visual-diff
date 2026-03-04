@@ -27,7 +27,28 @@ import {
   postPRComment,
 } from "./github";
 import { updateRunStatus } from "./db";
-import { bestEffort } from "./utils";
+import { bestEffort, withTimeout, invariant } from "./utils";
+
+// ─── Timeout budget per sandbox operation (ms) ─────────────────────────────
+// Each is set below its parent step.do timeout so the JS-level Promise.race
+// fires before Cloudflare's step timeout, giving us a clean error + stack.
+
+const T = {
+  DOCKER_READY: 45_000,
+  EXEC_QUICK: 15_000,
+  GIT_CLONE: 4 * 60_000,
+  GIT_FETCH: 2 * 60_000,
+  WRITE_FILE: 30_000,
+  EXPOSE_PORT: 30_000,
+  SET_ENV: 15_000,
+  CREATE_OPENCODE: 60_000,
+  SESSION_CREATE: 30_000,
+  SESSION_PROMPT: 60_000,
+  WAIT_AGENT: 11 * 60_000,
+  READ_FILE: 30_000,
+  UPLOAD_LOOP: 2.5 * 60_000,
+  CLEANUP: 20_000,
+} as const;
 
 // ─── Workflow params ────────────────────────────────────────────────────────
 
@@ -63,12 +84,14 @@ export class ScreenshotWorkflow extends WorkflowEntrypoint<
         await this.uploadAndComment(step, p);
       }
       await step.do("mark-completed", () =>
-        updateRunStatus(this.env.DB, p.sandboxId, "completed"),
+        updateRunStatus(this.env.DB, p.sandboxId, "complete"),
       );
-    } catch {
+    } catch (err) {
+      const message =
+        err instanceof Error ? err.message : String(err ?? "Unknown error");
       await bestEffort(() =>
         step.do("mark-failed", () =>
-          updateRunStatus(this.env.DB, p.sandboxId, "failed"),
+          updateRunStatus(this.env.DB, p.sandboxId, "errored", message),
         ),
       );
     }
@@ -81,45 +104,52 @@ export class ScreenshotWorkflow extends WorkflowEntrypoint<
       const sandbox = getSandbox(this.env.Sandbox, p.sandboxId);
       const token = await getInstallationToken(this.env, p.installationId);
 
-      await sandbox.exec(
-        "timeout 30 sh -c 'until docker version >/dev/null 2>&1; do sleep 0.5; done'",
+      const dockerReady = await withTimeout(
+        sandbox.exec(
+          "timeout 30 sh -c 'until docker version >/dev/null 2>&1; do sleep 0.5; done'",
+        ),
+        T.DOCKER_READY,
       );
-      await sandbox.exec("touch /workspace/agent.log");
-      await sandbox.exec("rm -rf /workspace/repo");
+      invariant(dockerReady.success, "Docker did not become ready in time");
 
-      // #region agent log
-      const ts = () => new Date().toISOString();
-      const log = (msg: string) => sandbox.exec(`echo '${ts()} [clone] ${msg}' >> /workspace/agent.log`);
-      await log("Starting git clone...");
-      // #endregion
-
-      await sandbox.gitCheckout(
-        `https://x-access-token:${token}@github.com/${p.owner}/${p.repo}.git`,
-        { targetDir: "/workspace/repo" },
+      await withTimeout(
+        sandbox.exec("touch /workspace/agent.log"),
+        T.EXEC_QUICK,
       );
-
-      // #region agent log
-      const verifyResult = await sandbox.exec("test -d /workspace/repo/.git && echo EXISTS || echo MISSING");
-      await log(`Repo dir check: ${(verifyResult.stdout ?? "").trim()}`);
-      // #endregion
-
-      if (!verifyResult.stdout?.includes("EXISTS")) {
-        throw new Error("gitCheckout did not create /workspace/repo");
-      }
-
-      const fetchResult = await sandbox.exec(
-        `cd /workspace/repo && git fetch origin pull/${p.prNumber}/head && git checkout ${p.commitSha}`,
+      await withTimeout(
+        sandbox.exec("rm -rf /workspace/repo"),
+        T.EXEC_QUICK,
       );
 
-      // #region agent log
-      await log(`git fetch/checkout exitCode=${fetchResult.exitCode}`);
-      // #endregion
+      await withTimeout(
+        sandbox.gitCheckout(
+          `https://x-access-token:${token}@github.com/${p.owner}/${p.repo}.git`,
+          { targetDir: "/workspace/repo" },
+        ),
+        T.GIT_CLONE,
+      );
 
-      if (!fetchResult.success) {
-        throw new Error(
-          `git fetch/checkout failed (exit ${fetchResult.exitCode}): ${fetchResult.stderr}`,
-        );
-      }
+      const verifyResult = await withTimeout(
+        sandbox.exec(
+          "test -d /workspace/repo/.git && echo EXISTS || echo MISSING",
+        ),
+        T.EXEC_QUICK,
+      );
+      invariant(
+        verifyResult.stdout?.includes("EXISTS"),
+        "gitCheckout did not create /workspace/repo",
+      );
+
+      const fetchResult = await withTimeout(
+        sandbox.exec(
+          `cd /workspace/repo && git fetch origin pull/${p.prNumber}/head && git checkout ${p.commitSha}`,
+        ),
+        T.GIT_FETCH,
+      );
+      invariant(
+        fetchResult.success,
+        `git fetch/checkout failed (exit ${fetchResult.exitCode}): ${fetchResult.stderr}`,
+      );
     });
   }
 
@@ -134,17 +164,27 @@ export class ScreenshotWorkflow extends WorkflowEntrypoint<
         fetchChangedFiles(octokit, p.owner, p.repo, p.prNumber),
       ]);
 
-      await sandbox.exec(
-        "mkdir -p /workspace/context /workspace/screenshots",
+      await withTimeout(
+        sandbox.exec("mkdir -p /workspace/context /workspace/screenshots"),
+        T.EXEC_QUICK,
       );
-      await sandbox.writeFile(
-        "/workspace/context/pr-description.md",
-        `# ${prDetails.title}\n\n${prDetails.body}`,
+      await withTimeout(
+        sandbox.writeFile(
+          "/workspace/context/pr-description.md",
+          `# ${prDetails.title}\n\n${prDetails.body}`,
+        ),
+        T.WRITE_FILE,
       );
-      await sandbox.writeFile("/workspace/context/pr-diff.patch", diff);
-      await sandbox.writeFile(
-        "/workspace/context/changed-files.json",
-        JSON.stringify(changedFiles, null, 2),
+      await withTimeout(
+        sandbox.writeFile("/workspace/context/pr-diff.patch", diff),
+        T.WRITE_FILE,
+      );
+      await withTimeout(
+        sandbox.writeFile(
+          "/workspace/context/changed-files.json",
+          JSON.stringify(changedFiles, null, 2),
+        ),
+        T.WRITE_FILE,
       );
     });
   }
@@ -153,9 +193,10 @@ export class ScreenshotWorkflow extends WorkflowEntrypoint<
     await step.do("start-agent", { timeout: "3 minutes" }, async () => {
       const sandbox = getSandbox(this.env.Sandbox, p.sandboxId);
 
-      const exposed = await sandbox.exposePort(8080, {
-        hostname: "vd.tractorbeam.ai",
-      });
+      const exposed = await withTimeout(
+        sandbox.exposePort(8080, { hostname: "vd.tractorbeam.ai" }),
+        T.EXPOSE_PORT,
+      );
 
       const envVars: Record<string, string> = {
         PATH: "/root/.opencode/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
@@ -163,8 +204,9 @@ export class ScreenshotWorkflow extends WorkflowEntrypoint<
       if (this.env.BRAINTRUST_API_KEY) {
         envVars.BRAINTRUST_API_KEY = this.env.BRAINTRUST_API_KEY;
         envVars.TRACE_TO_BRAINTRUST = "true";
+        envVars.BRAINTRUST_PROJECT = "visual-diff";
       }
-      await sandbox.setEnvVars(envVars);
+      await withTimeout(sandbox.setEnvVars(envVars), T.SET_ENV);
 
       const systemPrompt = buildSystemPrompt({
         cdpUrl: `wss://vd.tractorbeam.ai/cdp?secret=${this.env.INTERNAL_SECRET}`,
@@ -173,9 +215,8 @@ export class ScreenshotWorkflow extends WorkflowEntrypoint<
       });
 
       const dir = "/workspace";
-      const { client, server } = await createOpencode<OpencodeClient>(
-        sandbox,
-        {
+      const { client, server } = await withTimeout(
+        createOpencode<OpencodeClient>(sandbox, {
           directory: dir,
           config: {
             ...(this.env.BRAINTRUST_API_KEY && {
@@ -194,51 +235,57 @@ export class ScreenshotWorkflow extends WorkflowEntrypoint<
             },
             agent: { build: { maxSteps: 80 } },
           } satisfies OpencodeConfig,
-        },
+        }),
+        T.CREATE_OPENCODE,
       );
 
       try {
-        const session = await client.session.create({
-          body: { title: "Visual Diff Agent" },
-          query: { directory: dir },
-        });
-
-        if (session.error || !session.data) {
-          throw new Error(
-            `Failed to create session: ${JSON.stringify(session.error ?? session)}`,
-          );
-        }
+        const session = await withTimeout(
+          client.session.create({
+            body: { title: "Visual Diff Agent" },
+            query: { directory: dir },
+          }),
+          T.SESSION_CREATE,
+        );
+        invariant(
+          !session.error && session.data,
+          `Failed to create session: ${JSON.stringify(session.error ?? session)}`,
+        );
 
         const sid = session.data.id;
 
-        await sandbox.writeFile(
-          "/workspace/opencode-session.json",
-          JSON.stringify({ sessionId: sid, directory: dir }),
+        await withTimeout(
+          sandbox.writeFile(
+            "/workspace/opencode-session.json",
+            JSON.stringify({ sessionId: sid, directory: dir }),
+          ),
+          T.WRITE_FILE,
         );
 
-        const promptResult = await client.session.promptAsync({
-          path: { id: sid },
-          query: { directory: dir },
-          body: {
-            model: {
-              providerID: "anthropic",
-              modelID: "claude-sonnet-4-5",
-            },
-            system: systemPrompt,
-            parts: [
-              {
-                type: "text" as const,
-                text: "Analyze the PR and take screenshots of affected pages. Follow all instructions in the system prompt.",
+        const promptResult = await withTimeout(
+          client.session.promptAsync({
+            path: { id: sid },
+            query: { directory: dir },
+            body: {
+              model: {
+                providerID: "anthropic",
+                modelID: "claude-sonnet-4-5",
               },
-            ],
-          },
-        });
-
-        if (promptResult.error) {
-          throw new Error(
-            `Failed to send prompt: ${JSON.stringify(promptResult.error)}`,
-          );
-        }
+              system: systemPrompt,
+              parts: [
+                {
+                  type: "text" as const,
+                  text: "Analyze the PR and take screenshots of affected pages. Follow all instructions in the system prompt.",
+                },
+              ],
+            },
+          }),
+          T.SESSION_PROMPT,
+        );
+        invariant(
+          !promptResult.error,
+          `Failed to send prompt: ${JSON.stringify(promptResult.error)}`,
+        );
 
         return { sessionId: sid, directory: dir };
       } finally {
@@ -247,10 +294,6 @@ export class ScreenshotWorkflow extends WorkflowEntrypoint<
     });
   }
 
-  // Pushes the wait into the sandbox with a single blocking exec call.
-  // The shell loop checks the local filesystem with zero network overhead.
-  // Cancellation is handled implicitly: registerRun/killRun call
-  // instance.terminate() + sandbox.destroy(), killing the exec and workflow.
   private async waitForAgent(
     step: WorkflowStep,
     p: WorkflowParams,
@@ -260,11 +303,14 @@ export class ScreenshotWorkflow extends WorkflowEntrypoint<
       { timeout: "12 minutes", retries: { limit: 2, delay: "5 seconds" } },
       async () => {
         const sandbox = getSandbox(this.env.Sandbox, p.sandboxId);
-        const result = await sandbox.exec(
-          `for i in $(seq 1 ${AGENT_TIMEOUT_SECS}); do ` +
-            `[ -f /workspace/screenshot-manifest.json ] && echo FOUND && exit 0; ` +
-            `sleep 1; ` +
-            `done; echo TIMEOUT`,
+        const result = await withTimeout(
+          sandbox.exec(
+            `for i in $(seq 1 ${AGENT_TIMEOUT_SECS}); do ` +
+              `[ -f /workspace/screenshot-manifest.json ] && echo FOUND && exit 0; ` +
+              `sleep 1; ` +
+              `done; echo TIMEOUT`,
+          ),
+          T.WAIT_AGENT,
         );
         return result.stdout?.includes("FOUND") ?? false;
       },
@@ -277,8 +323,9 @@ export class ScreenshotWorkflow extends WorkflowEntrypoint<
       { timeout: "3 minutes", retries: { limit: 2, delay: "5 seconds" } },
       async () => {
         const sandbox = getSandbox(this.env.Sandbox, p.sandboxId);
-        const manifestResult = await sandbox.readFile(
-          "/workspace/screenshot-manifest.json",
+        const manifestResult = await withTimeout(
+          sandbox.readFile("/workspace/screenshot-manifest.json"),
+          T.READ_FILE,
         );
         const manifest: ScreenshotManifest = JSON.parse(
           manifestResult.content,
@@ -298,26 +345,29 @@ export class ScreenshotWorkflow extends WorkflowEntrypoint<
         }
 
         const uploaded: UploadedScreenshot[] = [];
-        for (const entry of manifest.screenshots) {
-          const stream = await sandbox.readFileStream(entry.path);
-          const { content } = await collectFile(stream);
-          const data =
-            content instanceof Uint8Array
-              ? content
-              : new TextEncoder().encode(content);
-          const key = screenshotR2Key(
-            p.owner,
-            p.repo,
-            p.sandboxId,
-            entry.route,
-          );
-          const url = await uploadScreenshot(this.env, key, data);
-          uploaded.push({
-            route: entry.route,
-            description: entry.description,
-            url,
-          });
-        }
+        const uploadAll = async () => {
+          for (const entry of manifest.screenshots) {
+            const stream = await sandbox.readFileStream(entry.path);
+            const { content } = await collectFile(stream);
+            const data =
+              content instanceof Uint8Array
+                ? content
+                : new TextEncoder().encode(content);
+            const key = screenshotR2Key(
+              p.owner,
+              p.repo,
+              p.sandboxId,
+              entry.route,
+            );
+            const url = await uploadScreenshot(this.env, key, data);
+            uploaded.push({
+              route: entry.route,
+              description: entry.description,
+              url,
+            });
+          }
+        };
+        await withTimeout(uploadAll(), T.UPLOAD_LOOP);
 
         const commentBody = buildCommentMarkdown(p.commitSha, uploaded);
         await postPRComment(
@@ -336,51 +386,67 @@ export class ScreenshotWorkflow extends WorkflowEntrypoint<
       step.do("cleanup", { timeout: "30 seconds" }, async () => {
         const sandbox = getSandbox(this.env.Sandbox, p.sandboxId);
 
-        await bestEffort(async () => {
-          const logResult = await sandbox.exec(
-            "cat /workspace/agent.log 2>/dev/null || true",
-          );
-          if (logResult.stdout?.trim()) {
-            await syncLogsToR2(
-              this.env,
-              p.owner,
-              p.repo,
-              p.sandboxId,
-              logResult.stdout,
-            );
-          }
-        });
-
-        await bestEffort(async () => {
-          const sessionFile = await sandbox.readFile(
-            "/workspace/opencode-session.json",
-          );
-          const { sessionId: sid, directory: dir } = JSON.parse(
-            sessionFile.content,
-          );
-          const { client: c, server: s } =
-            await createOpencode<OpencodeClient>(sandbox, { directory: dir });
-          try {
-            const { data: msgs } = await c.session.messages({
-              path: { id: sid },
-              query: { directory: dir },
-            });
-            if (msgs && (msgs as unknown[]).length > 0) {
-              await syncMessagesToR2(
-                this.env,
-                p.owner,
-                p.repo,
-                p.sandboxId,
-                msgs as unknown[],
+        await bestEffort(() =>
+          withTimeout(
+            (async () => {
+              const logResult = await sandbox.exec(
+                "cat /workspace/agent.log 2>/dev/null || true",
               );
-            }
-          } finally {
-            await s.close();
-          }
-        });
+              if (logResult.stdout?.trim()) {
+                await syncLogsToR2(
+                  this.env,
+                  p.owner,
+                  p.repo,
+                  p.sandboxId,
+                  logResult.stdout,
+                );
+              }
+            })(),
+            T.CLEANUP,
+          ),
+        );
 
-        await bestEffort(() => sandbox.killAllProcesses());
-        await bestEffort(() => sandbox.destroy());
+        await bestEffort(() =>
+          withTimeout(
+            (async () => {
+              const sessionFile = await sandbox.readFile(
+                "/workspace/opencode-session.json",
+              );
+              const { sessionId: sid, directory: dir } = JSON.parse(
+                sessionFile.content,
+              );
+              const { client: c, server: s } =
+                await createOpencode<OpencodeClient>(sandbox, {
+                  directory: dir,
+                });
+              try {
+                const { data: msgs } = await c.session.messages({
+                  path: { id: sid },
+                  query: { directory: dir },
+                });
+                if (msgs && (msgs as unknown[]).length > 0) {
+                  await syncMessagesToR2(
+                    this.env,
+                    p.owner,
+                    p.repo,
+                    p.sandboxId,
+                    msgs as unknown[],
+                  );
+                }
+              } finally {
+                await s.close();
+              }
+            })(),
+            T.CLEANUP,
+          ),
+        );
+
+        await bestEffort(() =>
+          withTimeout(sandbox.killAllProcesses(), T.EXEC_QUICK),
+        );
+        await bestEffort(() =>
+          withTimeout(sandbox.destroy(), T.EXEC_QUICK),
+        );
       }),
     );
   }

@@ -33,7 +33,7 @@ export async function registerRun(
   if (existing) {
     // Mark the old run as cancelled
     await env.DB.prepare(
-      `UPDATE runs SET status = 'cancelled', updated_at = datetime('now') WHERE id = ?`,
+      `UPDATE runs SET status = 'terminated', updated_at = datetime('now') WHERE id = ?`,
     )
       .bind(existing.id)
       .run();
@@ -94,13 +94,14 @@ export async function updateRunStatus(
   db: D1Database,
   runId: string,
   status: RunStatus,
+  error?: string,
 ): Promise<void> {
   await db
     .prepare(
-      `UPDATE runs SET status = ?, updated_at = datetime('now')
-       WHERE id = ? AND status NOT IN ('cancelled', 'completed', 'failed')`,
+      `UPDATE runs SET status = ?, error = ?, updated_at = datetime('now')
+       WHERE id = ? AND status NOT IN ('terminated', 'complete', 'errored')`,
     )
-    .bind(status, runId)
+    .bind(status, error ?? null, runId)
     .run();
 }
 
@@ -116,9 +117,8 @@ export async function killRun(env: Env, runId: string): Promise<boolean> {
 
   if (!row) return false;
 
-  // Update status to failed (even if already terminal -- force it)
   await env.DB.prepare(
-    `UPDATE runs SET status = 'failed', updated_at = datetime('now') WHERE id = ?`,
+    `UPDATE runs SET status = 'errored', updated_at = datetime('now') WHERE id = ?`,
   )
     .bind(runId)
     .run();
@@ -134,6 +134,30 @@ export async function killRun(env: Env, runId: string): Promise<boolean> {
   });
 
   return true;
+}
+
+/**
+ * Find runs stuck in "queued" or "running" for longer than the given
+ * threshold and force-fail them, terminating their workflows and sandboxes.
+ */
+export async function cleanupStaleRuns(
+  env: Env,
+  staleMinutes = 30,
+): Promise<number> {
+  const { results } = await env.DB.prepare(
+    `SELECT id FROM runs
+     WHERE status IN ('queued', 'running')
+       AND updated_at < datetime('now', ? || ' minutes')
+     LIMIT 50`,
+  )
+    .bind(-staleMinutes)
+    .all<{ id: string }>();
+
+  for (const row of results) {
+    await killRun(env, row.id);
+  }
+
+  return results.length;
 }
 
 /**
@@ -179,4 +203,65 @@ export async function listRuns(
     .all<Run>();
 
   return results;
+}
+
+const TERMINAL_WORKFLOW_STATUSES = new Set(["complete", "errored", "terminated"]);
+const RECONCILE_GRACE_MS = 60_000;
+
+/**
+ * Reconcile D1 run status with actual workflow instance status.
+ * For any run that D1 thinks is active (queued/running), check the real
+ * workflow status and update D1 if the workflow has already finished.
+ * This handles external terminations, sandbox deaths, and deploy resets.
+ *
+ * Runs younger than RECONCILE_GRACE_MS are skipped to avoid racing
+ * with workflow creation (D1 row is inserted before the workflow is
+ * fully queryable).
+ */
+export async function reconcileActiveRuns(
+  env: Env,
+  runs: Run[],
+): Promise<Run[]> {
+  const now = Date.now();
+  const active = runs.filter((r) => {
+    if (r.status !== "queued" && r.status !== "running") return false;
+    const age = now - new Date(r.updated_at + "Z").getTime();
+    return age > RECONCILE_GRACE_MS;
+  });
+  if (active.length === 0) return runs;
+
+  const reconciled = await Promise.all(
+    active.map(async (run) => {
+      try {
+        const instance = await env.SCREENSHOT_WORKFLOW.get(run.id);
+        const wf = await instance.status();
+        if (TERMINAL_WORKFLOW_STATUSES.has(wf.status)) {
+          const status = wf.status as RunStatus;
+          const error = extractWorkflowError(wf);
+          await bestEffort(() =>
+            updateRunStatus(env.DB, run.id, status, error ?? undefined),
+          );
+          return { ...run, status, error };
+        }
+      } catch {
+        // Transient failure or instance not yet available -- leave as-is.
+        // The cleanupStaleRuns cron handles truly orphaned runs.
+      }
+      return run;
+    }),
+  );
+
+  const reconciledMap = new Map(reconciled.map((r) => [r.id, r]));
+  return runs.map((r) => reconciledMap.get(r.id) ?? r);
+}
+
+function extractWorkflowError(wf: InstanceStatus): string | null {
+  if (wf.error) {
+    return typeof wf.error === "object" && "message" in wf.error
+      ? String((wf.error as { message: unknown }).message)
+      : String(wf.error);
+  }
+  if (wf.status === "errored") return "Workflow errored (no details available)";
+  if (wf.status === "terminated") return "Workflow was terminated";
+  return null;
 }

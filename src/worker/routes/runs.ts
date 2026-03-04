@@ -1,5 +1,5 @@
 import { Hono } from "hono";
-import { listRuns, killRun } from "../db";
+import { listRuns, reconcileActiveRuns, killRun } from "../db";
 import type { Env, RunStatus } from "../types";
 
 const runs = new Hono<{ Bindings: Env }>();
@@ -21,7 +21,9 @@ runs.get("/", async (c) => {
     50,
   );
 
-  return c.json({ runs: results });
+  const reconciled = await reconcileActiveRuns(c.env, results);
+
+  return c.json({ runs: reconciled });
 });
 
 runs.post("/:id/kill", async (c) => {
